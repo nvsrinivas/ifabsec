@@ -164,6 +164,9 @@ def run(model: str, port: int, only: str = "all") -> None:
             record("off: the leak exists on stock behavior", (b["cached"] or 0) >= (b["prompt_tokens"] or 1) - 1,
                    f"second sender's cached_tokens={b['cached']} of {b['prompt_tokens']}")
             ref_ids = a["ids"]
+            # Empty cache on both sides: a cached prefix changes the floating-point
+            # path enough to change a long greedy output, which is not an input difference.
+            off.flush()
             ref_greedy = chat(off, model, msgs(IDENTITY_TEXT), extra={"max_tokens": 48})
             off_lat = [chat(off, model, msgs(f"probe {i}"))["latency"] for i in range(10)]
     finally:
@@ -184,6 +187,7 @@ def run(model: str, port: int, only: str = "all") -> None:
             record("enforce: model input identical to stock", None, "server did not return prompt_token_ids")
 
         if ref_greedy is not None:
+            on.flush()
             g = chat(on, model, msgs(IDENTITY_TEXT), token("idcheck", "acme"), {"max_tokens": 48})
             same = g["prompt_tokens"] == ref_greedy["prompt_tokens"] and g["content"] == ref_greedy["content"]
             record("enforce: same prompt length and same greedy output as stock", same,

@@ -50,7 +50,7 @@ if ! pip install -q -e "$SG/python"; then
   echo "retrying with --ignore-installed"
   pip install -q --ignore-installed -e "$SG/python"
 fi
-pip install -q -e "$REPO/engine"
+pip install -q -e "$REPO/engine" || pip install -q --ignore-installed -e "$REPO/engine"
 python -c "import sglang, ifabsec_engine; print('sglang', sglang.__version__)"
 
 echo "== dev keys (in $STATE, git-ignored)"
