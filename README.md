@@ -75,7 +75,8 @@ On an A100 80GB ([`docs/results/2026-11-21-a100.md`](docs/results/2026-11-21-a10
 - At 256 users, labels matched stock's hit rate (88.6% vs 88.5%) and
   throughput (34.5 vs 34.6 req/s); per-user isolation fell to 48.3% and
   14.7 req/s. At 1,024 users, after the overhead fixes, labels cost about
-  10–17 ms at p50 time-to-first-token (6–10%) and ~1% of throughput.
+  25 ms at p50 time-to-first-token (17–34 ms over three runs) and ~2% of
+  throughput; p95 is within ~5% of stock.
 - A second template family (Phi-4-mini) passes all checks after the
   common-prefix boundary fix.
 
