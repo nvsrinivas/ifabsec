@@ -205,11 +205,11 @@ def _load_check():
 
 
 def table(rows: list[dict]) -> str:
-    head = f"{'policy':<15} {'hit rate':>9} {'TTFT p50':>9} {'TTFT p95':>9} {'e2e p50':>9} {'req/s':>7} {'prefill tok':>12}"
+    head = f"{'users':>5} {'policy':<17} {'hit rate':>9} {'TTFT p50':>9} {'TTFT p95':>9} {'e2e p50':>9} {'req/s':>7} {'prefill tok':>12}"
     lines = [head]
     for r in rows:
         name = r['policy'] + (f" #{r['round']}" if 'round' in r else '')
-        lines.append(f"{name:<15} {r['hit_rate']:>9.1%} {r['ttft_p50_ms']:>7.1f}ms {r['ttft_p95_ms']:>7.1f}ms "
+        lines.append(f"{r.get('users', ''):>5} {name:<17} {r['hit_rate']:>9.1%} {r['ttft_p50_ms']:>7.1f}ms {r['ttft_p95_ms']:>7.1f}ms "
                      f"{r['latency_p50_ms']:>7.1f}ms {r['requests_per_s']:>7.2f} {r['prefill_tokens']:>12,}")
     return "\n".join(lines)
 
@@ -222,7 +222,8 @@ def main() -> int:
     ap.add_argument("--model", default="Qwen/Qwen3-8B")
     ap.add_argument("--port", type=int, default=30000)
     ap.add_argument("--orgs", type=int, default=Workload.orgs)
-    ap.add_argument("--users", type=int, default=Workload.users_per_org)
+    ap.add_argument("--users", default=str(Workload.users_per_org),
+                    help="users per org; a comma list (4,16,64) sweeps load on one server start")
     ap.add_argument("--concurrency", type=int, default=Workload.concurrency)
     ap.add_argument("--repeat", type=int, default=2)
     a = ap.parse_args()
@@ -230,8 +231,10 @@ def main() -> int:
         print("run scripts/pod/setup.sh first", file=sys.stderr)
         return 2
 
-    w = Workload(orgs=a.orgs, users_per_org=a.users, concurrency=a.concurrency)
-    sessions = build_sessions(w)
+    user_counts = [int(u) for u in str(a.users).split(",")]
+    workloads = {u: Workload(orgs=a.orgs, users_per_org=u, concurrency=a.concurrency) for u in user_counts}
+    sessions_by_users = {u: build_sessions(w) for u, w in workloads.items()}
+    w = workloads[user_counts[0]]
     env = dict(line.split("=", 1) for line in (STATE / "env").read_text().split())
     seed = bytes.fromhex((STATE / "gw.seed").read_text().strip())
     kid, aud = env["IFAB_GATEWAY_KEYS"].split(":", 1)[0], env["IFAB_AUDIENCE"]
@@ -248,17 +251,20 @@ def main() -> int:
             server.wait()
             send = http_sender(server.url, a.model, w.max_tokens, mint)
             send(policies[0], "warmup", "warmup", [{"role": "user", "content": "hello"}])  # load kernels
-            for rnd in range(1, a.repeat + 1):
-                for policy in policies:
-                    server.flush()
-                    rows.append({**run_policy(policy, sessions, send, w.concurrency), "round": rnd})
-                    print(json.dumps(rows[-1]), flush=True)
+            for users in user_counts:
+                for rnd in range(1, a.repeat + 1):
+                    for policy in policies:
+                        server.flush()
+                        row = run_policy(policy, sessions_by_users[users], send, w.concurrency)
+                        rows.append({**row, "users": users * a.orgs, "round": rnd})
+                        print(json.dumps(rows[-1]), flush=True)
         finally:
             server.stop()
 
-    out = {"workload": w.__dict__, "results": rows}
+    rows.sort(key=lambda r: (r["users"], r["round"]))
+    out = {"model": a.model, "workload": {**w.__dict__, "users_per_org": user_counts}, "results": rows}
     (STATE / "latency.json").write_text(json.dumps(out, indent=2))
-    print(f"\n{w.orgs} orgs x {w.users_per_org} users, {w.turns}-turn sessions, concurrency {w.concurrency}\n")
+    print(f"\n{a.model}: {w.orgs} orgs, {w.turns}-turn sessions, concurrency {w.concurrency}\n")
     print(table(rows))
     log = (STATE / "server-bench-labels.log").read_text(errors="replace").splitlines()
     prof = [line for line in log if "[ifabsec-profile]" in line]
