@@ -68,6 +68,16 @@ Two runs on an RTX 4090 with Qwen3-8B (details in
   That gap is inflated by the 4090's small KV cache (6,860 tokens).
 - Labels change neither the model's input tokens nor its greedy output.
 
+On an A100 80GB ([`docs/results/2026-11-21-a100.md`](docs/results/2026-11-21-a100.md)):
+
+- Stock guessing reached 100% (36.6 ms timing gap) and extraction recovered
+  6/6 digits; with labels, 0 digits and a 0.02 ms gap.
+- At 256 users, labels matched stock's hit rate (88.6% vs 88.5%) and
+  throughput (34.5 vs 34.6 req/s); per-user isolation fell to 48.3% and
+  14.7 req/s. Labels add ~90 ms to p50 time-to-first-token, under investigation.
+- A second template family (Phi-4-mini) passes all checks after the
+  common-prefix boundary fix.
+
 ## Run the tests
 
 ```sh
