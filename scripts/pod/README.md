@@ -1,0 +1,59 @@
+# Running the checks on a rented GPU
+
+About 30–60 minutes of pod time the first time, mostly the model download and
+the SGLang install. On an RTX 4090 that is well under $1.
+
+## 1. Rent a pod (RunPod)
+
+1. Create an account at runpod.io and add a little credit ($10 is plenty).
+2. **Pods → Deploy.** Pick **RTX 4090** (24 GB). Community Cloud is the cheap
+   tier and fine here: only synthetic data goes on the pod.
+3. **Filter for CUDA 13** (the CUDA version filter on the deploy page). The
+   pinned SGLang uses CUDA 13 wheels, and older host drivers won't run them.
+4. **Template / container image:** `lmsysorg/sglang:latest`. It already has
+   the right torch and kernels, which saves most of the install time.
+5. **Disk:** 60 GB container disk (the 8B model is about 16 GB).
+6. Deploy, then open the web terminal or connect over SSH.
+
+**Stop the pod when you're done.** Billing runs per second while it's on.
+
+## 2. Get the repo onto the pod
+
+The repo is private, so use a GitHub token that can only read it: GitHub →
+Settings → Developer settings → Fine-grained tokens → generate one with
+**Repository access: only `ifabsec`**, **Contents: read-only**, and a short
+expiry.
+
+```sh
+export GH_TOKEN=github_pat_...        # paste, don't commit
+git clone https://x-access-token:$GH_TOKEN@github.com/nvsrinivas/ifabsec
+cd ifabsec
+```
+
+## 3. Run
+
+```sh
+bash scripts/pod/setup.sh             # pinned SGLang + patch + dev keys
+python scripts/pod/check.py           # default model: Qwen/Qwen3-8B
+```
+
+`check.py` starts the patched server twice. First with enforcement off, to
+show the leak on stock behavior, then with enforcement on. It prints a PASS or
+FAIL line per check and writes `.pod/results.json` plus both server logs.
+Send me the results file and any FAIL lines.
+
+## What to expect
+
+| Check | Expected |
+|---|---|
+| off: the leak exists on stock behavior | A second sender with identical text gets the whole prompt cached |
+| enforce: model input identical to stock | Same prompt token ids as stock SGLang |
+| enforce: Alice re-sends | Full hit |
+| enforce: Bob, identical text | Only the org system prompt is cached |
+| enforce: Eve, other org | Nothing cached |
+| enforce: no token / client cache_salt | Rejected (HTTP 400) |
+| enforce: `/generate` without a token | Nothing cached |
+| enforce: boundaries stable | No `isolating request` warnings |
+
+If setup fails on the install step, it's most likely a CUDA or driver
+mismatch: try a pod with a newer driver, or the newest `lmsysorg/sglang` tag.
