@@ -9,3 +9,6 @@ __pycache__/
 
 # Go
 /gateway/ifabsec-mint
+
+# pod state: dev keys, logs, results
+/.pod/

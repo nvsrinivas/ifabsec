@@ -108,3 +108,13 @@ def test_scope_parsing():
     for s in ["", "Public", "org:", "org:Acme", "team:acme", "team:/x", "user:-x", "group:x", "org:a:b"]:
         with pytest.raises(ScopeError):
             parse_scope(s)
+
+
+def test_devmint_tokens_verify():
+    from ifabsec_engine.devmint import chat_token, public_key
+    seed = bytes(range(32, 64))
+    v = Verifier("pod-1", {"dev-1": public_key(seed)}, now=lambda: T0 + 5)
+    tok = v.verify(chat_token(seed, kid="dev-1", aud="pod-1", user="alice", org="acme",
+                              shared_messages=ORG_PROMPT, now=T0))
+    assert [str(s) for s in tok.effective] == ["org:acme", "user:alice"]
+    check_messages(tok, ORG_PROMPT + [{"role": "user", "content": "hi"}])
