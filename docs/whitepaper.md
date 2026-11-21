@@ -56,7 +56,7 @@ Stock SGLang leaked a full account number to a same-org co-worker on both GPUs, 
 
 ### How the attack works
 
-Eve needs nothing but the API and the cached-token count that comes back with every response. The prompts below are the ones the test harness sends; the account number is drawn at random for each trial, and this one is from the A100 run below.
+Eve needs nothing but the API and the cached-token count that comes back in each response's usage block. SGLang's chat endpoint reports that count only when the server runs with `--enable-cache-report`, which our tests turn on; many hosted APIs report it by default, and the timing channel needs no count at all. The prompts below are the ones the test harness sends; the account number is drawn at random for each trial, and this one is from the A100 run below.
 
 ```text
 System (shared by the org):  You are Acme Corp's internal billing assistant. Answer briefly.
