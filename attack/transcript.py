@@ -57,7 +57,10 @@ def extract_trial(server, model, mint, digits=6, seed=11):
     for pos in range(digits):
         row = {}
         for d in "0123456789":
-            p = harness._send(server, model, mint, "eve", "acme", system, f"My account number is {known}{d}")
+            # A fresh account per probe (same org): with labels, Eve's own earlier
+            # probes would otherwise share her scope and make the first one look different.
+            p = harness._send(server, model, mint, f"eve-{pos}{d}", "acme", system,
+                              f"My account number is {known}{d}")
             row[d] = p.cached or 0
         top = max(row.values())
         best = [d for d in row if row[d] == top]
