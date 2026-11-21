@@ -82,10 +82,14 @@ class _timed:
             st[0] += 1
             st[1] += wall
             st[2] += cpu
-            if self.name == "ingress" and st[0] % 200 == 0:
+            # Each process prints its own stages: ingress in the HTTP process,
+            # sched.* in the scheduler (called many times per request).
+            every = {"ingress": 200, "sched": 2000}.get(self.name)
+            if every and st[0] % every == 0:
+                role = "http" if self.name == "ingress" else "scheduler"
                 summary = " ".join(f"{k}={v[1] / v[0] * 1e6:.0f}us(cpu {v[2] / v[0] * 1e6:.0f})/{v[0]}"
                                    for k, v in sorted(_prof.items()))
-                print("[ifabsec-profile]", summary, file=sys.stderr, flush=True)
+                print(f"[ifabsec-profile] {role}", summary, file=sys.stderr, flush=True)
         return False
 
 
@@ -404,14 +408,16 @@ def scoped_key(req: Any, token_ids: Sequence[int]):
     salt = getattr(req, "cache_salt", None)
     if not cfg.enforce:
         return token_ids, salt
-    rid = str(getattr(req, "rid", ""))
-    runs = _runs_for(cfg, rid, salt, getattr(req, "origin_input_ids", ()))
-    if cfg.observe:
-        return token_ids, None  # measurement only: stock keys, no isolation
-    if runs is not None:
-        with _timed("key"):
-            packed = pack(token_ids, runs)
-        if packed is not None:
-            return packed, LABELED_NAMESPACE
-        _dbg("scheduler", f"rid={rid}", "token id out of range; isolating")
-    return token_ids, ISOLATE_PREFIX + rid
+    with _timed("sched"):
+        rid = str(getattr(req, "rid", ""))
+        with _timed("sched.unseal"):
+            runs = _runs_for(cfg, rid, salt, getattr(req, "origin_input_ids", ()))
+        if cfg.observe:
+            return token_ids, None  # measurement only: stock keys, no isolation
+        if runs is not None:
+            with _timed("sched.pack"):
+                packed = pack(token_ids, runs)
+            if packed is not None:
+                return packed, LABELED_NAMESPACE
+            _dbg("scheduler", f"rid={rid}", "token id out of range; isolating")
+        return token_ids, ISOLATE_PREFIX + rid

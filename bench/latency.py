@@ -230,6 +230,8 @@ def main() -> int:
                     help="users per org; a comma list (4,16,64) sweeps load on one server start")
     ap.add_argument("--concurrency", type=int, default=Workload.concurrency)
     ap.add_argument("--repeat", type=int, default=2)
+    ap.add_argument("--policies", default="stock,per_user,labels,labels_shared,observe",
+                    help="comma list; servers with no selected policy are skipped")
     a = ap.parse_args()
     if not (STATE / "env").exists():
         print("run scripts/pod/setup.sh first", file=sys.stderr)
@@ -251,6 +253,9 @@ def main() -> int:
     for server_env, policies in (({"IFAB_MODE": "off"}, ("stock", "per_user")),
                                  ({**env, "IFAB_PROFILE": "1"}, ("labels", "labels_shared")),
                                  ({**env, "IFAB_MODE": "observe", "IFAB_PROFILE": "1"}, ("observe",))):
+        policies = tuple(p for p in policies if p in a.policies.split(","))
+        if not policies:
+            continue
         server = check.Server(a.model, a.port, server_env, STATE / f"server-bench-{policies[0]}.log")
         try:
             server.wait()
@@ -273,8 +278,10 @@ def main() -> int:
     print(table(rows))
     log = (STATE / "server-bench-labels.log").read_text(errors="replace").splitlines()
     prof = [line for line in log if "[ifabsec-profile]" in line]
-    if prof:
-        print("\nifabsec time per call (labeled server):", prof[-1].split("]", 1)[-1].strip())
+    for role in ("http", "scheduler"):
+        last = [line for line in prof if f"] {role} " in line]
+        if last:
+            print(f"\nifabsec time per call ({role}):", last[-1].split(role, 1)[-1].strip())
     print(f"\nresults: {STATE / 'latency.json'}")
     return 0
 
