@@ -56,22 +56,28 @@ Stock SGLang leaked a full account number to a same-org co-worker on both GPUs, 
 
 ### How the attack works
 
-Eve needs nothing but the API and the cached-token count that comes back with every response. The prompts below are the ones the test harness sends; the account number is drawn at random for each trial.
+Eve needs nothing but the API and the cached-token count that comes back with every response. The prompts below are the ones the test harness sends; the account number is drawn at random for each trial, and this one is from the A100 run below.
 
 ```text
 System (shared by the org):  You are Acme Corp's internal billing assistant. Answer briefly.
-Alice sends:                 My account number is 482913. Please check my balance.
+Alice sends:                 My account number is 877893. Please check my balance.
 
 Eve probes, one request each, and reads cached_tokens from the response:
   My account number is 0   ->  cached count stays at the shared prefix
-  My account number is 4   ->  cached count is one token higher: the first digit is 4
-  My account number is 40 ... 49   ->  one more token for 48
+  My account number is 8   ->  cached count is one token higher: the first digit is 8
+  My account number is 80 ... 89   ->  one more token for 87
   ...six positions, ten probes each, and the full number is recovered
 ```
 
 The extraction works because the tokenizer splits digits, so every correct digit extends Alice's cached prefix by exactly one token. With labels, Alice's message is cached under her own scope, so none of Eve's probes match past the shared system prompt and every digit looks the same.
 
+![Extraction probes on an A100: on stock SGLang the right digit returns one more cached token at each of six positions; with labels all ten digits return 30](img/extraction-probes.svg)
+
 The guessing attack is the coarser version: Eve holds a list of 20 candidate account numbers, sends each one inside a long form, and picks the probe that returned fastest or with the most cached tokens.
+
+![Guess timing on an A100: on stock SGLang the right guess returns in 31.7 ms against 63-77 ms for wrong guesses; with labels it returns in 63.9 ms, among the rest](img/guess-timing.svg)
+
+On stock SGLang the right guess also returned 579 cached tokens against 37–39 for the others; with labels it returned 37, like the rest.
 
 ### Attacks
 
