@@ -33,12 +33,23 @@ if git apply --check -R "$PATCH" 2>/dev/null; then
 else
   git fetch --filter=blob:none origin "$COMMIT" 2>/dev/null || git fetch origin
   git checkout -f "$COMMIT"
+  rm -f python/sglang/srt/ifabsec_hooks.py  # left over from an older version of the patch
   git apply "$PATCH"
   echo "patch applied"
 fi
 
 echo "== install (reuses the image's torch/kernels when they already match)"
-pip install -q -e "$SG/python"
+if ! command -v cargo >/dev/null 2>&1; then
+  # SGLang's optional Rust extensions need cargo; build without them if it's missing.
+  export SGLANG_BUILD_RUST_EXTS="${SGLANG_BUILD_RUST_EXTS:-none}"
+  echo "cargo not found: SGLANG_BUILD_RUST_EXTS=$SGLANG_BUILD_RUST_EXTS"
+fi
+if ! pip install -q -e "$SG/python"; then
+  # Base images often ship distro-installed Python packages pip can't uninstall
+  # ("no RECORD file"). Install over them instead.
+  echo "retrying with --ignore-installed"
+  pip install -q --ignore-installed -e "$SG/python"
+fi
 pip install -q -e "$REPO/engine"
 python -c "import sglang, ifabsec_engine; print('sglang', sglang.__version__)"
 

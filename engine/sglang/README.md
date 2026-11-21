@@ -34,6 +34,7 @@ Patched call sites:
 |---|---|
 | `mem_cache/common.py` `_req_radix_key` | Lookup and touch keys are scoped |
 | `mem_cache/radix_cache.py` `_insert_cache` | Insert keys, including the prompt split, are scoped |
+| `mem_cache/unified_radix_cache.py` | Same for `UnifiedRadixCache`, the default at the pinned commit: checkpoint and unpublished inserts, the prompt split, the linker skip key |
 | `managers/schedule_policy.py` `_compute_prefix_matches` | In-batch prefix grouping is scoped, so queue order can't reveal other tenants' prompts |
 | `entrypoints/openai/serving_chat.py` | Ingress hook, after header overrides so nothing the client sends can set the salt |
 | `ifabsec_hooks.py` (new) | No-op unless `IFAB_MODE=enforce` |
@@ -53,8 +54,9 @@ export IFAB_INTERNAL_KEY="$(openssl rand -hex 32)"
 python -m sglang.launch_server --model-path Qwen/Qwen3-8B
 ```
 
-Leave HiCache, hybrid/SWA caches and multimodal off. v0.1 patches the plain
-`RadixCache` only.
+Leave HiCache, LMCache/FlexKV, external linkers and multimodal off. v0.1
+patches `RadixCache` and the default `UnifiedRadixCache` insert and lookup
+paths, but not their storage prefetch paths.
 
 ## First GPU session checklist
 
@@ -81,9 +83,12 @@ per-request `cache_salt`.
 
 ## Known limits
 
-- Plain `RadixCache` only. Other cache implementations build keys elsewhere
-  and are not patched; with enforcement on they still never widen sharing (the
-  per-request salt keeps them isolated), but sharing is lost.
+- `RadixCache` and `UnifiedRadixCache` only, without HiCache storage
+  prefetch. Other cache backends (LMCache, FlexKV, external linkers) build
+  keys elsewhere and are not patched. With enforcement on they never widen
+  sharing, since the raw internal salt keeps each prompt in its own
+  namespace, but they lose sharing. The first GPU run hit exactly this with
+  the unified cache: every labeled request fell back to isolation.
 - Tool definitions or chat-template options that change how the system prompt
   renders make boundaries unstable, so those requests fall back to user scope.
 - Token ids must be below 2^20; larger ids isolate the request.

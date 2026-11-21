@@ -192,3 +192,75 @@ index 7693660..f71d544 100644
              ).page_aligned(self.page_size)
              if 0 < len(prompt_key) < key_len:
                  self.insert(
+diff --git a/python/sglang/srt/mem_cache/unified_radix_cache.py b/python/sglang/srt/mem_cache/unified_radix_cache.py
+index 9903540..405a40c 100644
+--- a/python/sglang/srt/mem_cache/unified_radix_cache.py
++++ b/python/sglang/srt/mem_cache/unified_radix_cache.py
+@@ -27,6 +27,7 @@ import msgspec
+ import torch
+ 
+ from sglang.srt.distributed.communication_tags import P2PTag
++from sglang.srt import ifabsec_hooks
+ from sglang.srt.environ import envs
+ from sglang.srt.layers.cp.base import get_cp_strategy, is_cp_sharded_padded
+ from sglang.srt.managers.cache_controller import CacheOperation
+@@ -735,11 +736,12 @@ class UnifiedRadixCache(BasePrefixCache):
+         # Convert the request's raw-token skip boundary to page-aligned radix-key units.
+         if self.linker is None:
+             return nullcontext()
++        key_ids, key_salt = ifabsec_hooks.scoped_key(req, token_ids)
+         skip_key = RadixKey(
+-            token_ids[: req.linker_offload_skip_prefix_len],
++            key_ids[: req.linker_offload_skip_prefix_len],
+             req.extra_key,
+             is_bigram=self.tree_core.is_eagle,
+-            cache_salt=req.cache_salt,
++            cache_salt=key_salt,
+         ).page_aligned(self.page_size)
+         return self.linker.skip_offload_prefix(len(skip_key))
+ 
+@@ -1692,11 +1694,12 @@ class UnifiedRadixCache(BasePrefixCache):
+         for comp in self._components_tuple:
+             effective_cache_len = comp.floor_cache_len(effective_cache_len)
+ 
++        key_ids, key_salt = ifabsec_hooks.scoped_key(req, token_ids)
+         radix_key = RadixKey(
+-            token_ids[:effective_cache_len],
++            key_ids[:effective_cache_len],
+             req.extra_key,
+             is_bigram=self.tree_core.is_eagle,
+-            cache_salt=req.cache_salt,
++            cache_salt=key_salt,
+         )
+ 
+         if (
+@@ -1762,11 +1765,12 @@ class UnifiedRadixCache(BasePrefixCache):
+         # Split the leaf at the prompt boundary so eviction can drop the output
+         # KV without the prompt. prev_prefix_len keeps the overlapping indices
+         # from being freed as duplicates.
++        prompt_ids, prompt_salt = ifabsec_hooks.scoped_key(req, req.origin_input_ids)
+         prompt_key = RadixKey(
+-            req.origin_input_ids,
++            prompt_ids,
+             req.extra_key,
+             is_bigram=self.tree_core.is_eagle,
+-            cache_salt=req.cache_salt,
++            cache_salt=prompt_salt,
+         ).page_aligned(self.page_size)
+         if (
+             len(self._components_tuple) == 1
+@@ -1880,11 +1884,12 @@ class UnifiedRadixCache(BasePrefixCache):
+             if cache_len is not None:
+                 effective_cache_len = min(effective_cache_len, cache_len)
+ 
++        key_ids, key_salt = ifabsec_hooks.scoped_key(req, token_ids)
+         radix_key = RadixKey(
+-            token_ids[:effective_cache_len],
++            key_ids[:effective_cache_len],
+             req.extra_key,
+             is_bigram=self.tree_core.is_eagle,
+-            cache_salt=req.cache_salt,
++            cache_salt=key_salt,
+         )
+         if envs.SGLANG_OPT_UNIFIED_CACHE_FREE_OUT_OF_WINDOW_SLOTS.get():
+             for comp in self._components_tuple:

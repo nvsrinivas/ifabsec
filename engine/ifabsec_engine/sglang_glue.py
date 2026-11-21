@@ -28,6 +28,7 @@ import hmac
 import json
 import logging
 import os
+import sys
 import threading
 from array import array
 from collections import OrderedDict
@@ -45,6 +46,19 @@ ISOLATE_PREFIX = "ifab-iso:"  # per-request namespace when we fail closed
 TOKEN_BITS = 20
 SCOPE_BITS = 43
 _MAC_CONTEXT = b"ifab-salt-v1\0"
+_DEBUG = os.environ.get("IFAB_DEBUG") == "1"
+
+
+def _dbg(*parts) -> None:
+    """IFAB_DEBUG=1: one line per event on stderr, which lands in the server log."""
+    if _DEBUG:
+        print("[ifabsec]", *parts, file=sys.stderr, flush=True)
+
+
+def _ids_summary(ids) -> str:
+    kind = type(ids).__name__
+    ids = list(ids)
+    return f"n={len(ids)} sha={_ids_digest(ids).hex()[:12]} head={ids[:4]} tail={ids[-4:]} type={kind}"
 
 
 # ---------------------------------------------------------------- config
@@ -195,7 +209,9 @@ def label_request(
             runs = [[None, most_private]]
             break
         runs.append([n, str(eff)])
-    return encode_salt(cfg.internal_key, runs, input_ids)
+    salt = encode_salt(cfg.internal_key, runs, input_ids)
+    _dbg("ingress", _ids_summary(input_ids), f"runs={runs}", f"salt={salt[:20]}")
+    return salt
 
 
 # ---------------------------------------------------------------- keys
@@ -220,30 +236,37 @@ def scope_id(scope: str) -> Optional[int]:
 def decode_salt(internal_key: bytes, salt: Any, input_ids: Sequence[int]) -> Optional[list[tuple[Optional[int], int]]]:
     """Verify an internal salt against the request's input ids. Returns
     [(end, scope_id), ...] or None if anything is off."""
-    if not isinstance(salt, str) or not salt.startswith(SALT_PREFIX):
-        return None
+    runs, _reason = _decode_salt(internal_key, salt, input_ids)
+    return runs
+
+
+def _decode_salt(internal_key, salt, input_ids):
+    if not isinstance(salt, str):
+        return None, "no salt"
+    if not salt.startswith(SALT_PREFIX):
+        return None, "salt is not an ifabsec salt"
     try:
         body, mac = salt[len(SALT_PREFIX):].split(".")
         payload = _unb64(body)
         if not hmac.compare_digest(_unb64(mac), _mac(internal_key, payload, input_ids)):
-            return None
+            return None, "MAC mismatch (token ids or internal key differ from ingress)"
         runs = json.loads(payload)
         out, prev = [], 0
         for i, (end, scope) in enumerate(runs):
             is_last = i == len(runs) - 1
             if is_last != (end is None):
-                return None
+                return None, "malformed runs"
             if not is_last and (not isinstance(end, int) or end <= prev):
-                return None
+                return None, "malformed runs"
             parse_scope(scope)
             sid = scope_id(scope)
             if sid is None:
-                return None
+                return None, "scope id collision"
             out.append((end, sid))
             prev = end if end is not None else prev
-        return out or None
-    except (ValueError, TypeError, ScopeError):
-        return None
+        return (out, "ok") if out else (None, "empty runs")
+    except (ValueError, TypeError, ScopeError) as e:
+        return None, f"unparseable salt: {e}"
 
 
 def _runs_for(cfg: Config, rid: str, salt: Any, origin_ids: Sequence[int]):
@@ -252,7 +275,8 @@ def _runs_for(cfg: Config, rid: str, salt: Any, origin_ids: Sequence[int]):
     if hit is not None:
         _runs_memo.move_to_end(key)
         return hit[0]
-    runs = decode_salt(cfg.internal_key, salt, origin_ids)
+    runs, reason = _decode_salt(cfg.internal_key, salt, origin_ids)
+    _dbg("scheduler", f"rid={rid}", _ids_summary(origin_ids), f"salt={str(salt)[:20]}", f"-> {reason}")
     _runs_memo[key] = (runs,)
     if len(_runs_memo) > _MEMO_MAX:
         _runs_memo.popitem(last=False)
@@ -293,4 +317,5 @@ def scoped_key(req: Any, token_ids: Sequence[int]):
         packed = pack(token_ids, runs)
         if packed is not None:
             return packed, LABELED_NAMESPACE
+        _dbg("scheduler", f"rid={rid}", "token id out of range; isolating")
     return token_ids, ISOLATE_PREFIX + rid
