@@ -57,12 +57,16 @@ See the roadmap and `engine/sglang/README.md`.
 
 ## Results so far
 
-First GPU run (RTX 4090, Qwen3-8B, details in
+Two runs on an RTX 4090 with Qwen3-8B (details in
 [`docs/results/2026-11-21-rtx4090.md`](docs/results/2026-11-21-rtx4090.md)):
-on stock SGLang a same-org co-tenant extracted a 6-digit account number from
-cached-token counts in every trial, and the right guess came back 42 ms faster.
-With labels the attacker recovered nothing and the timing gap disappeared,
-while the user's own hits and the shared org prompt still worked.
+
+- On stock SGLang, a same-org co-tenant extracted a 6-digit account number
+  from cached-token counts in every trial, and a right guess came back 42 ms
+  faster. With labels: no digits, no timing gap.
+- Under a 64-user load, labels kept stock's cache hit rate (82.1% vs 82.6%)
+  with 4.4× faster first tokens and 3× the throughput of per-user isolation.
+  That gap is inflated by the 4090's small KV cache (6,860 tokens).
+- Labels change neither the model's input tokens nor its greedy output.
 
 ## Run the tests
 
