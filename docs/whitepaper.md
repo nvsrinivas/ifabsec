@@ -54,16 +54,30 @@ Labels defend against a tenant with ordinary API access who watches response tim
 
 Stock SGLang leaked a full account number to a same-org co-worker on both GPUs, and labels closed every channel we tested while keeping the org prompt shared. Setup: SGLang `efab9d61` with the ifabsec patch, Qwen3-8B unless noted, synthetic tenants, attacks only against our own servers. Eve sits in Alice's org, so she legitimately shares the org system prompt.
 
+### How the attack works
+
+Eve needs nothing but the API and the cached-token count that comes back with every response. The prompts below are the ones the test harness sends; the account number is drawn at random for each trial.
+
+```text
+System (shared by the org):  You are Acme Corp's internal billing assistant. Answer briefly.
+Alice sends:                 My account number is 482913. Please check my balance.
+
+Eve probes, one request each, and reads cached_tokens from the response:
+  My account number is 0   ->  cached count stays at the shared prefix
+  My account number is 4   ->  cached count is one token higher: the first digit is 4
+  My account number is 40 ... 49   ->  one more token for 48
+  ...six positions, ten probes each, and the full number is recovered
+```
+
+The extraction works because the tokenizer splits digits, so every correct digit extends Alice's cached prefix by exactly one token. With labels, Alice's message is cached under her own scope, so none of Eve's probes match past the shared system prompt and every digit looks the same.
+
+The guessing attack is the coarser version: Eve holds a list of 20 candidate account numbers, sends each one inside a long form, and picks the probe that returned fastest or with the most cached tokens.
+
 ### Attacks
 
-| Attack by Eve | Stock, RTX 4090 | Stock, A100 | With labels | Random guess |
-| --- | --- | --- | --- | --- |
-| Extract a 6-digit account number from cached-token counts | 6 of 6 digits, every trial | 6 of 6 digits | 0 digits | — |
-| Guess the account among 20, cached-token count | 70% | 100% | 0–10% | 5% |
-| Guess the account among 20, response time | 60% | 90% | 0% | 5% |
-| Response-time gap, right vs wrong guess | 42 ms | 36.6 ms | under 0.3 ms | — |
+![Attack success: stock SGLang 60-100%, with labels at or near chance](img/attack-success.svg)
 
-The 4090 caps stock guessing at 70% because its 6,860-token KV cache evicts Alice's entry partway through a trial; the A100 has no such limit. On Phi-4-mini, stock guessing also reached 100% with a 14.4 ms gap, and labels brought it to 10% and 0%.
+On stock SGLang a right guess came back 42 ms faster on the 4090 and 36.6 ms on the A100; with labels the gap was under 0.3 ms, which is noise. The 4090 caps stock guessing at 70% because its 6,860-token KV cache evicts Alice's entry partway through a trial; the A100 has no such limit. On Phi-4-mini, stock guessing also reached 100% with a 14.4 ms gap, and labels brought it to 10% and 0%.
 
 ### Correctness
 
@@ -75,13 +89,9 @@ The 4090 caps stock guessing at 70% because its 6,860-token KV cache evicts Alic
 
 Labels keep stock's hit rate and about 98% of its throughput, while per-user isolation halves throughput and computes 5.4× more prompt tokens. Workload on the A100: 4 orgs × 256 users, two-turn sessions, 16 in flight, averaged over runs.
 
-| Policy | Safe | Hit rate | Requests/s | First token, median | First token, p95 | Prompt tokens computed |
-| --- | --- | --- | --- | --- | --- | --- |
-| Stock SGLang | No | 90.6% | 25.6 | 166 ms | 210 ms | 253K |
-| ifabsec labels | Yes | 90.3% | 25.0 | 191 ms | 220 ms | 260K |
-| Per-user `cache_salt` | Yes | 48.3% | 12.5 | 213 ms | 1,477 ms | 1,389K |
+![Cost by policy: hit rate, throughput, p95 latency, prompt tokens computed](img/policy-cost.svg)
 
-Labels' median first token ranged from 183 to 200 ms across three runs, 17–34 ms above stock. Profiling locates the cost: the scheduler spends about 0.5 ms per request on scoped keys, and the HTTP front end about 2.2 ms, of which only 0.7 ms is computation. The rest is waiting for Python's global interpreter lock behind the response stream, an engineering cost rather than a property of the design. An observe mode that runs every check but keys the cache like stock sat at 175 ms.
+At the median, labels' first token took 191 ms against stock's 166 ms and per-user isolation's 213 ms; across three runs it ranged from 183 to 200 ms. Profiling locates the cost: the scheduler spends about 0.5 ms per request on scoped keys, and the HTTP front end about 2.2 ms, of which only 0.7 ms is computation. The rest is waiting for Python's global interpreter lock behind the response stream, an engineering cost rather than a property of the design. An observe mode that runs every check but keys the cache like stock sat at 175 ms.
 
 In a simulation of 20 orgs with 50 users each, an agent workload with a 6,000-token system prompt kept a 94.8% hit rate with labels, the same as stock, versus 74.9% with per-user isolation. That workload is favourable: when users paste shared documents the gateway has not approved, labels recover about half of the lost hits.
 
