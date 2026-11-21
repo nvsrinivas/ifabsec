@@ -44,13 +44,22 @@ if ! command -v cargo >/dev/null 2>&1; then
   export SGLANG_BUILD_RUST_EXTS="${SGLANG_BUILD_RUST_EXTS:-none}"
   echo "cargo not found: SGLANG_BUILD_RUST_EXTS=$SGLANG_BUILD_RUST_EXTS"
 fi
-if ! pip install -q -e "$SG/python"; then
-  # Base images often ship distro-installed Python packages pip can't uninstall
-  # ("no RECORD file"). Install over them instead.
-  echo "retrying with --ignore-installed"
-  pip install -q --ignore-installed -e "$SG/python"
-fi
-pip install -q -e "$REPO/engine" || pip install -q --ignore-installed -e "$REPO/engine"
+# Base images often ship distro-installed Python packages pip can't uninstall
+# ("no RECORD file"), so a first attempt can fail and a retry that installs
+# over them succeeds. The first attempt's output only matters if both fail.
+pip_install() {
+  local log="$STATE/pip-first-attempt.log"
+  if ! pip install -q "$@" 2>"$log"; then
+    echo "first attempt hit a distro-installed package; retrying with --ignore-installed (expected)"
+    if ! pip install -q --ignore-installed "$@"; then
+      echo "both attempts failed; first attempt's errors:" >&2
+      cat "$log" >&2
+      return 1
+    fi
+  fi
+}
+pip_install -e "$SG/python"
+pip_install -e "$REPO/engine"
 python -c "import sglang, ifabsec_engine; print('sglang', sglang.__version__)"
 
 echo "== dev keys (in $STATE, git-ignored)"
