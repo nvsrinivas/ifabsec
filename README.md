@@ -55,6 +55,8 @@ content**. The v0.1 benchmark exists to measure exactly that.
 Not here yet: a GPU run of the patch, the attacks and the latency benchmark.
 See the roadmap and `engine/sglang/README.md`.
 
+White paper: [`docs/whitepaper.md`](docs/whitepaper.md) (design, threat model, results, related work).
+
 ## Results so far
 
 Two runs on an RTX 4090 with Qwen3-8B (details in
