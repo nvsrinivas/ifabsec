@@ -218,3 +218,12 @@ def test_boundary_never_extends_past_the_approved_render(cfg):
     short_render = lambda k: render(msgs[:k])[:-5]  # a render shorter than the real boundary
     salt = g.label_request(cfg, g.verifier(), token_for("alice", "acme", msgs), msgs, full, short_render, tokenize)
     assert g.decode_salt(INTERNAL, salt, full)[0][0] == len(render(msgs[:1])) - 5
+
+
+def test_observe_mode_runs_checks_but_keys_like_stock(cfg):
+    req, _ = ingress(cfg, "alice", "acme", "hi")
+    g._reset_for_tests(g.Config(True, "cluster-1", {"gw-key-1": PUB}, INTERNAL, observe=True),
+                       Verifier("cluster-1", {"gw-key-1": PUB}, now=lambda: T0 + 10))
+    assert g.scoped_key(req, req.origin_input_ids) == (req.origin_input_ids, None)
+    assert g.Config.from_env({"IFAB_MODE": "observe", "IFAB_AUDIENCE": "c1",
+                              "IFAB_GATEWAY_KEYS": f"k1:{PUB.hex()}", "IFAB_INTERNAL_KEY": INTERNAL.hex()}).observe

@@ -15,6 +15,10 @@ concurrently. Three policies, same workload:
             the same sharing as stock (replies stay in the requester's scope)
             but through all of the labeling code. Its gap to stock is mostly
             the code's own cost plus server-to-server variation.
+  observe   IFAB_MODE=observe with the same tokens as labels: every check runs
+            in the HTTP process, but the cache is keyed exactly like stock.
+            observe minus stock is the ingress cost; labels minus observe is
+            the cost of scoped keys in the scheduler (and the sharing given up).
 
 Each policy runs --repeat times (default 2) on its server, so the table also
 shows run-to-run variation. The labeled server runs with IFAB_PROFILE=1, which
@@ -166,7 +170,7 @@ def http_sender(url: str, model: str, max_tokens: int, mint: Optional[Callable] 
         headers = {"Content-Type": "application/json"}
         if policy == "per_user":
             body["cache_salt"] = f"{org}/{user}"
-        if policy == "labels":
+        if policy in ("labels", "observe"):
             headers["X-Ifab-Token"] = mint(user, org, messages[:1])
         if policy == "labels_shared":
             headers["X-Ifab-Token"] = mint(user, org, messages)  # everything org-scoped
@@ -245,7 +249,8 @@ def main() -> int:
     check = _load_check()
     rows = []
     for server_env, policies in (({"IFAB_MODE": "off"}, ("stock", "per_user")),
-                                 ({**env, "IFAB_PROFILE": "1"}, ("labels", "labels_shared"))):
+                                 ({**env, "IFAB_PROFILE": "1"}, ("labels", "labels_shared")),
+                                 ({**env, "IFAB_MODE": "observe", "IFAB_PROFILE": "1"}, ("observe",))):
         server = check.Server(a.model, a.port, server_env, STATE / f"server-bench-{policies[0]}.log")
         try:
             server.wait()

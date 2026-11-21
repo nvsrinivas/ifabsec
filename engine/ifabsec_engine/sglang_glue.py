@@ -57,7 +57,7 @@ def _dbg(*parts) -> None:
 
 
 _PROFILE = os.environ.get("IFAB_PROFILE") == "1"
-_prof: dict[str, list] = {}
+_prof: dict[str, list] = {}  # name -> [calls, wall seconds, cpu seconds]
 _prof_lock = threading.Lock()
 
 
@@ -69,19 +69,22 @@ class _timed:
         self.name = name
 
     def __enter__(self):
-        self.t0 = time.perf_counter() if _PROFILE else 0.0
+        if _PROFILE:
+            self.t0, self.c0 = time.perf_counter(), time.thread_time()
         return self
 
     def __exit__(self, *exc):
         if not _PROFILE:
             return False
-        dt = time.perf_counter() - self.t0
+        wall, cpu = time.perf_counter() - self.t0, time.thread_time() - self.c0
         with _prof_lock:
-            calls_total = _prof.setdefault(self.name, [0, 0.0])
-            calls_total[0] += 1
-            calls_total[1] += dt
-            if self.name == "ingress" and calls_total[0] % 200 == 0:
-                summary = " ".join(f"{k}={v[1] / v[0] * 1e6:.0f}us/{v[0]}" for k, v in sorted(_prof.items()))
+            st = _prof.setdefault(self.name, [0, 0.0, 0.0])
+            st[0] += 1
+            st[1] += wall
+            st[2] += cpu
+            if self.name == "ingress" and st[0] % 200 == 0:
+                summary = " ".join(f"{k}={v[1] / v[0] * 1e6:.0f}us(cpu {v[2] / v[0] * 1e6:.0f})/{v[0]}"
+                                   for k, v in sorted(_prof.items()))
                 print("[ifabsec-profile]", summary, file=sys.stderr, flush=True)
         return False
 
@@ -101,14 +104,15 @@ class Config:
     audience: str = ""
     gateway_keys: Mapping[str, bytes] = None  # kid -> Ed25519 public key
     internal_key: bytes = b""  # shared by ingress and scheduler processes
+    observe: bool = False  # IFAB_MODE=observe: every check runs, cache keyed like stock (measuring cost only)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Config":
         mode = env.get("IFAB_MODE", "off")
         if mode == "off":
             return cls(enforce=False)
-        if mode != "enforce":
-            raise ValueError(f"IFAB_MODE must be 'off' or 'enforce', got {mode!r}")
+        if mode not in ("enforce", "observe"):
+            raise ValueError(f"IFAB_MODE must be 'off', 'enforce' or 'observe', got {mode!r}")
         keys = {}
         for item in filter(None, env.get("IFAB_GATEWAY_KEYS", "").split(",")):
             kid, _, hexkey = item.partition(":")
@@ -120,7 +124,7 @@ class Config:
                 "IFAB_MODE=enforce needs IFAB_AUDIENCE, IFAB_GATEWAY_KEYS (kid:hex,...) "
                 "and IFAB_INTERNAL_KEY (>= 32 bytes hex)"
             )
-        return cls(True, audience, keys, internal)
+        return cls(True, audience, keys, internal, observe=mode == "observe")
 
 
 _config: Optional[Config] = None
@@ -255,6 +259,8 @@ _MAX_TEMPLATE_TAIL = 8
 
 def _common_prefix_len(a: Sequence[int], b: Sequence[int]) -> int:
     n = min(len(a), len(b))
+    if array("q", a[:n]) == array("q", b[:n]):  # the usual case, compared in C
+        return n
     for i in range(n):
         if a[i] != b[i]:
             return i
@@ -400,6 +406,8 @@ def scoped_key(req: Any, token_ids: Sequence[int]):
         return token_ids, salt
     rid = str(getattr(req, "rid", ""))
     runs = _runs_for(cfg, rid, salt, getattr(req, "origin_input_ids", ()))
+    if cfg.observe:
+        return token_ids, None  # measurement only: stock keys, no isolation
     if runs is not None:
         with _timed("key"):
             packed = pack(token_ids, runs)

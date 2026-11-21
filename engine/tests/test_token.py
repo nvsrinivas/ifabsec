@@ -118,3 +118,18 @@ def test_devmint_tokens_verify():
                               shared_messages=ORG_PROMPT, now=T0))
     assert [str(s) for s in tok.effective] == ["org:acme", "user:alice"]
     check_messages(tok, ORG_PROMPT + [{"role": "user", "content": "hi"}])
+
+
+def test_replay_cache_prunes_expired_tokens():
+    clock = [T0 + 10]
+    v = Verifier("cluster-1", {"gw-key-1": bytes.fromhex(VECTOR["public_key_hex"])}, now=lambda: clock[0])
+    first = mint(claims())
+    v.verify(first)
+    for _ in range(50):
+        v.verify(mint(claims()))
+    assert len(v._seen) == 51
+    with pytest.raises(ReplayError):
+        v.verify(first)
+    clock[0] = T0 + 60 + 30 + 1  # every token above has expired
+    v.verify(mint(claims(iat=T0 + 80, exp=T0 + 140)))
+    assert len(v._seen) == 1 and len(v._expiry) == 1
