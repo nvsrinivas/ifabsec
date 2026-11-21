@@ -18,7 +18,18 @@ Alice, Eve and Acme are made up, and so is the account number. Everything else r
 
 ## Why the server remembers
 
-An AI model reads your message one small piece at a time; these pieces are called tokens, and a number like 877893 is six of them, one per digit. Reading is the expensive part. So servers keep a cache: if a new message starts with exactly the same tokens as one they read recently, they skip ahead and reuse the work.
+First, what is an AI server? A model on its own is just a large file of numbers. The software that runs it and answers requests is called an inference server. It loads the model onto GPUs, accepts requests through an API like the ones the big AI services offer, and packs many users' requests together to keep the GPUs busy. SGLang, the one used here, and vLLM are two of the most widely used open-source inference servers.
+
+An AI model writes its answer one token at a time, always predicting the next one from everything before it. A token is a word or a piece of one; a number like 877893 is six tokens, one per digit.
+
+Before writing anything, the model reads your whole message. For every token it works out a set of internal notes that each later step looks back at, called the KV cache. Reading a long message is the expensive part. Writing the answer is cheaper per token because each new token only adds its own notes.
+
+Normally those notes are thrown away when the reply is done. **Prefix caching** keeps them. If a new message starts with exactly the same tokens as one read recently, the server reuses the notes for that shared start and only reads the rest. Two details matter later:
+
+- **Only an identical start counts.** A token's notes depend on everything before it, so the same words in the middle of a different message can't be reused.
+- **It changes the speed, not the answer.** The model produces the same reply with or without the cache.
+
+Nearly every modern AI server does this, including the open-source servers SGLang and vLLM. The big hosted AI services do it too, and often charge less for cached tokens. It pays off most when many requests share a long opening: company instructions, the tool descriptions an AI agent carries, a document people keep asking about, or the earlier turns of the same chat.
 
 Think of a barista who remembers the start of popular orders. "Large oat latte with..." is already half made by the time you finish speaking. That is why the company instructions, which open every chat, cost almost nothing after the first time.
 

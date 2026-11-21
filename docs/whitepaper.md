@@ -4,6 +4,18 @@ November 21, 2026 · exported from the working draft, which is the version to ed
 
 Shared LLM inference servers leak what one tenant sent to another through their prefix cache. Per-tenant isolation fixes the leak only by discarding the cache hits that make sharing worthwhile. ifabsec carries verified identity from a zero-trust network layer into the inference engine and enforces it in the cache keys. On an A100 running Qwen3-8B on SGLang, a same-org co-worker recovered a 6-digit account number from stock SGLang every time; with ifabsec, they recovered nothing. With 1,024 concurrent users, ifabsec kept stock's cache hit rate (90.3% vs 90.6%) and about 98% of its throughput, twice the throughput of per-user isolation, for about 25 ms of extra median first-token latency.
 
+## Background: prefix caching
+
+Prefix caching reuses the attention state of a prompt's opening tokens across requests, cutting time to first token without changing the output. Its defining property, that any request can reuse any matching prefix, is also what makes it observable across tenants.
+
+SGLang is an open-source inference engine. It loads a model onto GPUs, serves an OpenAI-compatible API, batches requests from many users continuously, and manages the KV cache in GPU memory. vLLM and TensorRT-LLM fill the same role. ifabsec patches SGLang; the idea applies to any engine with a shared prefix cache.
+
+- **Two phases.** LLMs generate autoregressively, each token predicted from all tokens before it. Prefill computes the attention keys and values for every prompt token at every layer; this is the KV cache. Decode then generates one token at a time while attending to that cache. For long prompts, prefill dominates time to first token.
+- **Reuse across requests.** A KV cache normally lives only for its request. Prefix caching keeps the entries afterwards and reuses them for any later request whose token sequence starts the same way.
+- **Exact, but prefix-only.** Attention is causal, so a token's keys and values depend only on the tokens before it. Reuse therefore gives identical output, but only for an identical prefix. The same text after a different opening cannot reuse anything.
+- **Implementations.** SGLang keeps entries in a radix tree keyed by token ids (RadixAttention). vLLM hashes fixed-size blocks, each hash chained over the prefix before it. Hosted APIs offer the same idea as prompt caching, usually priced below uncached input.
+- **What gets shared.** System prompts, tool schemas, few-shot examples, retrieved documents, and the earlier turns of a conversation. Entries live in GPU memory and are evicted, least recently used first, under pressure.
+
 ## The problem
 
 A prefix cache reuses the computed state of any prompt that starts with text already seen, so a cached prompt answers faster and many servers report how many of its tokens were cached. If the cache is shared across tenants, anyone can test whether someone else just sent a given text: guess, send, and watch the speed or the cached-token count. A Stanford audit found this kind of global cache sharing in production APIs from seven providers in late 2024.
