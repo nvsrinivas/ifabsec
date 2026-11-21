@@ -61,3 +61,25 @@ both results files and any FAIL lines.
 
 If setup fails on the install step, it's most likely a CUDA or driver
 mismatch: try a pod with a newer driver, or the newest `lmsysorg/sglang` tag.
+
+## Full session on an H100 (`suite.sh`)
+
+One command runs setup, the checks and attacks on two model families, and the
+latency benchmark swept over load:
+
+```sh
+export GH_TOKEN=github_pat_... && git clone https://x-access-token:$GH_TOKEN@github.com/nvsrinivas/ifabsec && cd ifabsec
+nohup bash scripts/pod/suite.sh > suite.log 2>&1 &
+tail -f suite.log
+```
+
+- **Pod:** 1× H100 80 GB (RunPod lists the H100 PCIe from about $2/hour on
+  Community Cloud), CUDA 13, 100 GB disk for two models.
+- **Models:** Qwen3-8B and Phi-4-mini by default, two chat-template families.
+  `MODELS="Qwen/Qwen3-8B meta-llama/Llama-3.1-8B-Instruct"` with `HF_TOKEN`
+  set works for gated models. Tokenizers that group digits (Llama, Phi) skip
+  the digit-by-digit extraction; the guessing attack still runs.
+- **Load sweep:** 16, 64 and 256 users (4 orgs), 32 sessions in flight, each
+  policy twice, including the `labels_shared` overhead control.
+- **Time:** about 1.5–2 hours. The end of `suite.log` prints a summary, also
+  saved as `.pod/runs/summary.txt`. Send that, then terminate the pod.

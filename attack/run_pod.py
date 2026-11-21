@@ -48,6 +48,13 @@ def main() -> int:
     def mint(user, org, shared):
         return chat_token(seed, kid=kid, aud=aud, user=user, org=org, shared_messages=shared)
 
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(a.model)
+    digits_split = len(tok.encode("4417", add_special_tokens=False)) == 4
+    if not digits_split:
+        print(f"{a.model} groups digits into multi-digit tokens; skipping digit-by-digit extraction", flush=True)
+
     check = load_check()
     out = {}
     for mode, server_env in (("stock", {"IFAB_MODE": "off"}), ("labels", env)):
@@ -55,19 +62,19 @@ def main() -> int:
         server = check.Server(a.model, a.port, server_env, STATE / f"server-attack-{mode}.log")
         try:
             server.wait()
-            out[mode] = [
-                harness.guess_attack(server, a.model, mint, k=a.k, trials=a.trials),
-                harness.extract_attack(server, a.model, mint, trials=max(3, a.trials // 2)),
-            ]
+            out[mode] = [harness.guess_attack(server, a.model, mint, k=a.k, trials=a.trials)]
+            if digits_split:
+                out[mode].append(harness.extract_attack(server, a.model, mint, trials=max(3, a.trials // 2)))
             for r in out[mode]:
                 print(json.dumps(r), flush=True)
         finally:
             server.stop()
 
-    (STATE / "attack.json").write_text(json.dumps(out, indent=2))
+    (STATE / "attack.json").write_text(json.dumps({"model": a.model, **out}, indent=2))
     g_s, g_l = out["stock"][0], out["labels"][0]
-    e_s, e_l = out["stock"][1], out["labels"][1]
-    print(f"""
+    e_s = out["stock"][1] if digits_split else {"digits": 6, "mean_digits_recovered": "n/a"}
+    e_l = out["labels"][1] if digits_split else {"mean_digits_recovered": "n/a"}
+    print(f"""{a.model}
                                   stock     labels    chance
 guess, cached-token channel      {g_s['metadata_accuracy']:>6}    {g_l['metadata_accuracy']:>6}    {g_s['chance']:>6}
 guess, timing channel            {g_s['timing_accuracy']:>6}    {g_l['timing_accuracy']:>6}    {g_s['chance']:>6}
