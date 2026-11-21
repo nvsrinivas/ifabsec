@@ -38,6 +38,11 @@ else
 fi
 
 echo "== install (reuses the image's torch/kernels when they already match)"
+if ! command -v cargo >/dev/null 2>&1; then
+  # SGLang's optional Rust extensions need cargo; build without them if it's missing.
+  export SGLANG_BUILD_RUST_EXTS="${SGLANG_BUILD_RUST_EXTS:-none}"
+  echo "cargo not found: SGLANG_BUILD_RUST_EXTS=$SGLANG_BUILD_RUST_EXTS"
+fi
 pip install -q -e "$SG/python"
 pip install -q -e "$REPO/engine"
 python -c "import sglang, ifabsec_engine; print('sglang', sglang.__version__)"
