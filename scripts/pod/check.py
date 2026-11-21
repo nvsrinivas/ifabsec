@@ -177,6 +177,16 @@ def run(model: str, port: int, only: str = "all") -> None:
     on = Server(model, port, {**env, "IFAB_DEBUG": "1"}, STATE / "server-enforce.log")
     try:
         on.wait()
+        # Identity first, on an empty cache, so its flush can't wipe Alice's entry below.
+        if ref_greedy is not None:
+            on.flush()
+            g = chat(on, model, msgs(IDENTITY_TEXT), token("idcheck", "acme"), {"max_tokens": 48})
+            same = g["prompt_tokens"] == ref_greedy["prompt_tokens"] and g["content"] == ref_greedy["content"]
+            record("enforce: same prompt length and same greedy output as stock", same,
+                   f"prompt_tokens {g['prompt_tokens']} vs {ref_greedy['prompt_tokens']}, "
+                   f"48-token greedy output {'identical' if g['content'] == ref_greedy['content'] else 'DIFFERS'}")
+
+        on.flush()
         alice1 = chat(on, model, msgs(SECRET), token("alice", "acme"))
         record("enforce: labeled chat works", alice1["status"] == 200,
                f"status {alice1['status']} {str(alice1['resp'])[:200] if alice1['status'] != 200 else ''}")
@@ -185,14 +195,6 @@ def run(model: str, port: int, only: str = "all") -> None:
                    f"{len(ref_ids)} vs {len(alice1['ids'])} ids")
         else:
             record("enforce: model input identical to stock", None, "server did not return prompt_token_ids")
-
-        if ref_greedy is not None:
-            on.flush()
-            g = chat(on, model, msgs(IDENTITY_TEXT), token("idcheck", "acme"), {"max_tokens": 48})
-            same = g["prompt_tokens"] == ref_greedy["prompt_tokens"] and g["content"] == ref_greedy["content"]
-            record("enforce: same prompt length and same greedy output as stock", same,
-                   f"prompt_tokens {g['prompt_tokens']} vs {ref_greedy['prompt_tokens']}, "
-                   f"48-token greedy output {'identical' if g['content'] == ref_greedy['content'] else 'DIFFERS'}")
 
         alice2 = chat(on, model, msgs(SECRET), token("alice", "acme"))
         record("enforce: Alice re-sends, full hit", (alice2["cached"] or 0) >= (alice2["prompt_tokens"] or 1) - 1,
