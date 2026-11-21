@@ -27,6 +27,8 @@ STATE = REPO / ".pod"
 SYSTEM = {"role": "system", "content": "You are Acme Corp's internal support assistant. Answer briefly."}
 SECRET = "Customer 88214 disputes invoice 4417 for $12,950 and threatens to cancel."
 
+IDENTITY_TEXT = "List three things to check before approving a refund."
+
 results: list[dict] = []
 
 
@@ -74,6 +76,12 @@ class Server:
             self.proc.kill()
         self.log.close()
 
+    def flush(self) -> bool:
+        sys.path.insert(0, str(REPO))
+        from attack.harness import flush_url
+
+        return flush_url(self.url)
+
     def post(self, path: str, body: dict, headers: dict | None = None) -> tuple[int, dict, float]:
         req = urllib.request.Request(self.url + path, data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json", **(headers or {})})
@@ -113,7 +121,8 @@ def chat(server, model, messages, token=None, extra=None):
     cached = find_key(resp.get("usage") or {}, "cached_tokens")
     prompt_tokens = (resp.get("usage") or {}).get("prompt_tokens")
     return {"status": status, "cached": cached, "prompt_tokens": prompt_tokens,
-            "ids": find_key(resp, "prompt_token_ids"), "latency": latency, "resp": resp}
+            "ids": find_key(resp, "prompt_token_ids"), "content": find_key(resp.get("choices") or [], "content"),
+            "latency": latency, "resp": resp}
 
 
 def msgs(text):
@@ -141,7 +150,7 @@ def run(model: str, port: int, only: str = "all") -> None:
         return chat_token(seed, kid=kid, aud=aud, user=user, org=org, shared_messages=[SYSTEM])
 
     # ---- stock behavior (IFAB_MODE=off)
-    ref_ids, off_lat = None, [0.0]
+    ref_ids, off_lat, ref_greedy = None, [0.0], None
     off = Server(model, port, {"IFAB_MODE": "off"}, STATE / "server-off.log") if only == "all" else None
     try:
         if off is not None:
@@ -155,6 +164,7 @@ def run(model: str, port: int, only: str = "all") -> None:
             record("off: the leak exists on stock behavior", (b["cached"] or 0) >= (b["prompt_tokens"] or 1) - 1,
                    f"second sender's cached_tokens={b['cached']} of {b['prompt_tokens']}")
             ref_ids = a["ids"]
+            ref_greedy = chat(off, model, msgs(IDENTITY_TEXT), extra={"max_tokens": 48})
             off_lat = [chat(off, model, msgs(f"probe {i}"))["latency"] for i in range(10)]
     finally:
         if off is not None:
@@ -172,6 +182,13 @@ def run(model: str, port: int, only: str = "all") -> None:
                    f"{len(ref_ids)} vs {len(alice1['ids'])} ids")
         else:
             record("enforce: model input identical to stock", None, "server did not return prompt_token_ids")
+
+        if ref_greedy is not None:
+            g = chat(on, model, msgs(IDENTITY_TEXT), token("idcheck", "acme"), {"max_tokens": 48})
+            same = g["prompt_tokens"] == ref_greedy["prompt_tokens"] and g["content"] == ref_greedy["content"]
+            record("enforce: same prompt length and same greedy output as stock", same,
+                   f"prompt_tokens {g['prompt_tokens']} vs {ref_greedy['prompt_tokens']}, "
+                   f"48-token greedy output {'identical' if g['content'] == ref_greedy['content'] else 'DIFFERS'}")
 
         alice2 = chat(on, model, msgs(SECRET), token("alice", "acme"))
         record("enforce: Alice re-sends, full hit", (alice2["cached"] or 0) >= (alice2["prompt_tokens"] or 1) - 1,

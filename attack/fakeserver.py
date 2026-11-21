@@ -36,6 +36,10 @@ class FakeServer:
         self.base, self.per_tok, self.noise = base_ms / 1000, per_token_ms / 1000, noise_ms / 1000
         self.rng, self.n = random.Random(seed), 0
 
+    def flush(self) -> bool:
+        self.cache = PrefixCache()
+        return True
+
     def _serve(self, ids, salt):
         self.n += 1
         req = types.SimpleNamespace(rid=f"r{self.n}", cache_salt=salt, origin_input_ids=ids)

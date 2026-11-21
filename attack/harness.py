@@ -83,6 +83,13 @@ def _system(rng: random.Random) -> dict:
     return {"role": "system", "content": f"{BASE_SYSTEM} Session {rng.getrandbits(48):012x}."}
 
 
+def _flush(server) -> bool:
+    """Empty the server's prefix cache between trials, so one trial's probes
+    can't evict the next trial's victim entry. Returns whether it worked."""
+    flush = getattr(server, "flush", None)
+    return bool(flush and flush())
+
+
 def _send(server, model, mint: Minter, user, org, system, text) -> Probe:
     msgs = [system, {"role": "user", "content": text}]
     p = chat(server, model, msgs, mint(user, org, [system]))
@@ -95,8 +102,9 @@ def guess_attack(server: Server, model: str, mint: Minter, k: int = 20, trials: 
                  seed: int = 0, warmup: int = 3) -> dict:
     rng = random.Random(seed)
     meta_hits = timing_hits = 0
-    gaps = []
+    gaps, flushed = [], []
     for _ in range(trials):
+        flushed.append(_flush(server))
         system = _system(rng)
         ids = [f"{n:06d}" for n in rng.sample(range(10**6), k)]
         secret = rng.choice(ids)
@@ -121,14 +129,16 @@ def guess_attack(server: Server, model: str, mint: Minter, k: int = 20, trials: 
         "timing_accuracy": round(timing_hits / trials, 3),
         "metadata_accuracy": round(meta_hits / trials, 3),
         "median_latency_gap_ms": round(statistics.median(gaps) * 1000, 2),
+        "cache_flushed_between_trials": all(flushed),
     }
 
 
 def extract_attack(server: Server, model: str, mint: Minter, digits: int = 6, trials: int = 5,
                    seed: int = 1) -> dict:
     rng = random.Random(seed)
-    recovered, full = [], 0
+    recovered, full, flushed = [], 0, []
     for _ in range(trials):
+        flushed.append(_flush(server))
         system = _system(rng)
         account = "".join(rng.choice("0123456789") for _ in range(digits))
         _send(server, model, mint, "alice", "acme", system,
@@ -151,6 +161,7 @@ def extract_attack(server: Server, model: str, mint: Minter, digits: int = 6, tr
         "attack": "extract", "digits": digits, "trials": trials,
         "mean_digits_recovered": round(statistics.mean(recovered), 2),
         "full_recovery_rate": round(full / trials, 3),
+        "cache_flushed_between_trials": all(flushed),
     }
 
 
@@ -169,3 +180,21 @@ class HttpServer:
                 return r.status, json.loads(r.read()), time.perf_counter() - t0
         except urllib.error.HTTPError as e:
             return e.code, {}, time.perf_counter() - t0
+
+    def flush(self) -> bool:
+        return flush_url(self.url)
+
+
+def flush_url(url: str) -> bool:
+    """POST /flush_cache. SGLang answers in plain text and refuses while
+    requests are in flight, so retry briefly."""
+    for _ in range(10):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url.rstrip("/") + "/flush_cache", data=b"",
+                                                               method="POST"), timeout=30) as r:
+                if r.status == 200:
+                    return True
+        except (urllib.error.URLError, ConnectionError, TimeoutError):
+            pass
+        time.sleep(0.5)
+    return False

@@ -34,6 +34,7 @@ def _reset():
 def test_guess_attack(enforce):
     server = FakeServer(enforce, KEYS, INTERNAL)
     r = harness.guess_attack(server, "m", minter, k=20, trials=15)
+    assert r["cache_flushed_between_trials"]
     if not enforce:
         assert r["metadata_accuracy"] == 1.0
         assert r["timing_accuracy"] >= 0.9
