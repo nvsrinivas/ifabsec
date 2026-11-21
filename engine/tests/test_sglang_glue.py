@@ -172,3 +172,28 @@ def test_end_to_end_isolation_and_sharing(cfg):
 
     raw = types.SimpleNamespace(rid="raw-1", cache_salt=None, origin_input_ids=alice.origin_input_ids)
     assert cache.match_prefix(radix_keys(raw)) == 0  # /generate without a token: isolated
+
+
+def test_prefix_boundary_cache_still_checks_the_prompt(cfg):
+    calls = []
+
+    def counting_render(msgs):
+        def render_prefix(k):
+            calls.append(k)
+            return render(msgs[:k])
+        return render_prefix
+
+    for user in ("alice", "bob"):
+        msgs = [SYSTEM, {"role": "user", "content": f"hi from {user}"}]
+        ids = tokenize(render(msgs, gen=True))
+        salt = g.label_request(cfg, g.verifier(), token_for(user, "acme", msgs), msgs, ids,
+                               counting_render(msgs), tokenize)
+        assert g.decode_salt(INTERNAL, salt, ids)[0][1] == g.scope_id("org:acme")
+    assert calls == [1]  # the org prompt was rendered once, then cached
+
+    # A prompt whose tokens don't start with the cached render still falls back to isolation.
+    msgs = [SYSTEM, {"role": "user", "content": "hi"}]
+    ids = tokenize("<|system|>tampered" + render(msgs, gen=True))
+    salt = g.label_request(cfg, g.verifier(), token_for("carol", "acme", msgs), msgs, ids,
+                           counting_render(msgs), tokenize)
+    assert g.decode_salt(INTERNAL, salt, ids) == [(None, g.scope_id("user:carol"))]

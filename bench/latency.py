@@ -11,6 +11,14 @@ concurrently. Three policies, same workload:
             per user)
   labels    IFAB_MODE=enforce with label tokens (safe; the org prompt is
             cached once per org)
+  labels_shared  IFAB_MODE=enforce, every message labeled org-wide: nearly
+            the same sharing as stock (replies stay in the requester's scope)
+            but through all of the labeling code. Its gap to stock is mostly
+            the code's own cost plus server-to-server variation.
+
+Each policy runs --repeat times (default 2) on its server, so the table also
+shows run-to-run variation. The labeled server runs with IFAB_PROFILE=1, which
+logs mean time per request spent in ifabsec's code to its server log.
 
 Reports, per policy: prefix-cache hit rate, time to first token (p50, p95),
 end-to-end latency, and throughput. On the pod:
@@ -160,6 +168,8 @@ def http_sender(url: str, model: str, max_tokens: int, mint: Optional[Callable] 
             body["cache_salt"] = f"{org}/{user}"
         if policy == "labels":
             headers["X-Ifab-Token"] = mint(user, org, messages[:1])
+        if policy == "labels_shared":
+            headers["X-Ifab-Token"] = mint(user, org, messages)  # everything org-scoped
         req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions",
                                      data=json.dumps(body).encode(), headers=headers)
         t0 = time.perf_counter()
@@ -195,10 +205,11 @@ def _load_check():
 
 
 def table(rows: list[dict]) -> str:
-    head = f"{'policy':<9} {'hit rate':>9} {'TTFT p50':>9} {'TTFT p95':>9} {'e2e p50':>9} {'req/s':>7} {'prefill tok':>12}"
+    head = f"{'policy':<15} {'hit rate':>9} {'TTFT p50':>9} {'TTFT p95':>9} {'e2e p50':>9} {'req/s':>7} {'prefill tok':>12}"
     lines = [head]
     for r in rows:
-        lines.append(f"{r['policy']:<9} {r['hit_rate']:>9.1%} {r['ttft_p50_ms']:>7.1f}ms {r['ttft_p95_ms']:>7.1f}ms "
+        name = r['policy'] + (f" #{r['round']}" if 'round' in r else '')
+        lines.append(f"{name:<15} {r['hit_rate']:>9.1%} {r['ttft_p50_ms']:>7.1f}ms {r['ttft_p95_ms']:>7.1f}ms "
                      f"{r['latency_p50_ms']:>7.1f}ms {r['requests_per_s']:>7.2f} {r['prefill_tokens']:>12,}")
     return "\n".join(lines)
 
@@ -213,6 +224,7 @@ def main() -> int:
     ap.add_argument("--orgs", type=int, default=Workload.orgs)
     ap.add_argument("--users", type=int, default=Workload.users_per_org)
     ap.add_argument("--concurrency", type=int, default=Workload.concurrency)
+    ap.add_argument("--repeat", type=int, default=2)
     a = ap.parse_args()
     if not (STATE / "env").exists():
         print("run scripts/pod/setup.sh first", file=sys.stderr)
@@ -229,17 +241,18 @@ def main() -> int:
 
     check = _load_check()
     rows = []
-    for server_env, policies in (({"IFAB_MODE": "off"}, ("stock", "per_user")), (env, ("labels",))):
+    for server_env, policies in (({"IFAB_MODE": "off"}, ("stock", "per_user")),
+                                 ({**env, "IFAB_PROFILE": "1"}, ("labels", "labels_shared"))):
         server = check.Server(a.model, a.port, server_env, STATE / f"server-bench-{policies[0]}.log")
         try:
             server.wait()
             send = http_sender(server.url, a.model, w.max_tokens, mint)
-            for policy in policies:
-                server.flush()
-                send(policy, "warmup", "warmup", [{"role": "user", "content": "hello"}])  # load kernels
-                server.flush()
-                rows.append(run_policy(policy, sessions, send, w.concurrency))
-                print(json.dumps(rows[-1]), flush=True)
+            send(policies[0], "warmup", "warmup", [{"role": "user", "content": "hello"}])  # load kernels
+            for rnd in range(1, a.repeat + 1):
+                for policy in policies:
+                    server.flush()
+                    rows.append({**run_policy(policy, sessions, send, w.concurrency), "round": rnd})
+                    print(json.dumps(rows[-1]), flush=True)
         finally:
             server.stop()
 
@@ -247,6 +260,10 @@ def main() -> int:
     (STATE / "latency.json").write_text(json.dumps(out, indent=2))
     print(f"\n{w.orgs} orgs x {w.users_per_org} users, {w.turns}-turn sessions, concurrency {w.concurrency}\n")
     print(table(rows))
+    log = (STATE / "server-bench-labels.log").read_text(errors="replace").splitlines()
+    prof = [line for line in log if "[ifabsec-profile]" in line]
+    if prof:
+        print("\nifabsec time per call (labeled server):", prof[-1].split("]", 1)[-1].strip())
     print(f"\nresults: {STATE / 'latency.json'}")
     return 0
 

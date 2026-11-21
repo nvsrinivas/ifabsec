@@ -27,9 +27,10 @@ def fake_sender(server: FakeServer):
         headers = {}
         if policy == "per_user":
             body["cache_salt"] = f"{org}/{user}"
-        if policy == "labels":
-            headers["X-Ifab-Token"] = chat_token(SEED, kid="dev-1", aud="pod-1", user=user.replace("-", "."),
-                                                 org=org, shared_messages=messages[:1])
+        if policy in ("labels", "labels_shared"):
+            shared = messages[:1] if policy == "labels" else messages
+            headers["X-Ifab-Token"] = chat_token(SEED, kid="dev-1", aud="pod-1", user=user,
+                                                 org=org, shared_messages=shared)
         with lock:
             status, resp, lat = server.post("/v1/chat/completions", body, headers)
         assert status == 200, resp
@@ -40,7 +41,7 @@ def fake_sender(server: FakeServer):
 
 
 def run(policy):
-    server = FakeServer(policy == "labels", KEYS, INTERNAL)
+    server = FakeServer(policy.startswith("labels"), KEYS, INTERNAL)
     try:
         return run_policy(policy, build_sessions(W), fake_sender(server), W.concurrency)
     finally:
@@ -106,3 +107,11 @@ def test_http_sender_parses_sglang_style_stream():
         assert seen["body"]["cache_salt"] == "org0/org0-u1"
     finally:
         srv.shutdown()
+
+
+def test_labels_shared_nearly_matches_stock_sharing():
+    """The control shares what stock shares, except that model replies stay in
+    the requester's scope (the gateway can't approve text not yet written), so
+    a second turn re-computes the first reply. Within a point of stock."""
+    shared, stock = run("labels_shared")["hit_rate"], run("stock")["hit_rate"]
+    assert stock - 0.01 <= shared <= stock
