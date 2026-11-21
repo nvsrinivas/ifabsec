@@ -123,7 +123,7 @@ def msgs(text):
 # ------------------------------------------------------------------ checks
 
 
-def run(model: str, port: int) -> None:
+def run(model: str, port: int, only: str = "all") -> None:
     from transformers import AutoTokenizer
 
     from ifabsec_engine.devmint import chat_token
@@ -141,24 +141,27 @@ def run(model: str, port: int) -> None:
         return chat_token(seed, kid=kid, aud=aud, user=user, org=org, shared_messages=[SYSTEM])
 
     # ---- stock behavior (IFAB_MODE=off)
-    off = Server(model, port, {"IFAB_MODE": "off"}, STATE / "server-off.log")
+    ref_ids, off_lat = None, [0.0]
+    off = Server(model, port, {"IFAB_MODE": "off"}, STATE / "server-off.log") if only == "all" else None
     try:
-        off.wait()
-        a = chat(off, model, msgs(SECRET))
-        record("off: chat works", a["status"] == 200, f"status {a['status']}")
-        if a["cached"] is None:
-            record("off: cached-token reporting", False,
-                   "no cached_tokens in usage; is --enable-cache-report supported?")
-        b = chat(off, model, msgs(SECRET))  # a different tenant sending identical text
-        record("off: the leak exists on stock behavior", (b["cached"] or 0) >= (b["prompt_tokens"] or 1) - 1,
-               f"second sender's cached_tokens={b['cached']} of {b['prompt_tokens']}")
-        ref_ids = a["ids"]
-        off_lat = [chat(off, model, msgs(f"probe {i}"))["latency"] for i in range(10)]
+        if off is not None:
+            off.wait()
+            a = chat(off, model, msgs(SECRET))
+            record("off: chat works", a["status"] == 200, f"status {a['status']}")
+            if a["cached"] is None:
+                record("off: cached-token reporting", False,
+                       "no cached_tokens in usage; is --enable-cache-report supported?")
+            b = chat(off, model, msgs(SECRET))  # a different tenant sending identical text
+            record("off: the leak exists on stock behavior", (b["cached"] or 0) >= (b["prompt_tokens"] or 1) - 1,
+                   f"second sender's cached_tokens={b['cached']} of {b['prompt_tokens']}")
+            ref_ids = a["ids"]
+            off_lat = [chat(off, model, msgs(f"probe {i}"))["latency"] for i in range(10)]
     finally:
-        off.stop()
+        if off is not None:
+            off.stop()
 
     # ---- enforcement on
-    on = Server(model, port, env, STATE / "server-enforce.log")
+    on = Server(model, port, {**env, "IFAB_DEBUG": "1"}, STATE / "server-enforce.log")
     try:
         on.wait()
         alice1 = chat(on, model, msgs(SECRET), token("alice", "acme"))
@@ -195,8 +198,9 @@ def run(model: str, port: int) -> None:
                f"status {status}, cached={raw_cached}")
 
         on_lat = [chat(on, model, msgs(f"probe {i}"), token("lat", "acme"))["latency"] for i in range(10)]
-        record("enforce: overhead", None,
-               f"median latency {statistics.median(on_lat)*1000:.1f} ms vs {statistics.median(off_lat)*1000:.1f} ms off")
+        if only == "all":
+            record("enforce: overhead", None,
+                 f"median latency {statistics.median(on_lat)*1000:.1f} ms vs {statistics.median(off_lat)*1000:.1f} ms off")
     finally:
         on.stop()
 
@@ -210,12 +214,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="Qwen/Qwen3-8B")
     ap.add_argument("--port", type=int, default=30000)
+    ap.add_argument("--only", choices=["all", "enforce"], default="all",
+                    help="enforce: skip the stock-behavior server")
     a = ap.parse_args()
     if not (STATE / "env").exists():
         print("run scripts/pod/setup.sh first", file=sys.stderr)
         return 2
     try:
-        run(a.model, a.port)
+        run(a.model, a.port, a.only)
     finally:
         (STATE / "results.json").write_text(json.dumps(results, indent=2))
         print(f"\nresults: {STATE / 'results.json'}; server logs in {STATE}")
