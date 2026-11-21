@@ -30,6 +30,7 @@ import logging
 import os
 import sys
 import threading
+import time
 from array import array
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -53,6 +54,36 @@ def _dbg(*parts) -> None:
     """IFAB_DEBUG=1: one line per event on stderr, which lands in the server log."""
     if _DEBUG:
         print("[ifabsec]", *parts, file=sys.stderr, flush=True)
+
+
+_PROFILE = os.environ.get("IFAB_PROFILE") == "1"
+_prof: dict[str, list] = {}
+_prof_lock = threading.Lock()
+
+
+class _timed:
+    """IFAB_PROFILE=1: accumulate wall time per section; every 200 ingress
+    requests print mean microseconds per call to stderr (the server log)."""
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __enter__(self):
+        self.t0 = time.perf_counter() if _PROFILE else 0.0
+        return self
+
+    def __exit__(self, *exc):
+        if not _PROFILE:
+            return False
+        dt = time.perf_counter() - self.t0
+        with _prof_lock:
+            calls_total = _prof.setdefault(self.name, [0, 0.0])
+            calls_total[0] += 1
+            calls_total[1] += dt
+            if self.name == "ingress" and calls_total[0] % 200 == 0:
+                summary = " ".join(f"{k}={v[1] / v[0] * 1e6:.0f}us/{v[0]}" for k, v in sorted(_prof.items()))
+                print("[ifabsec-profile]", summary, file=sys.stderr, flush=True)
+        return False
 
 
 def _ids_summary(ids) -> str:
@@ -120,6 +151,7 @@ def _reset_for_tests(cfg: Optional[Config] = None, ver: Optional[Verifier] = Non
     global _config, _verifier
     _config, _verifier = cfg, ver
     _runs_memo.clear()
+    _prefix_cache.clear()
     _scope_ids.clear()
 
 
@@ -167,6 +199,33 @@ def _check_text_messages(tok, msgs: list[dict]) -> None:
                          for m in msgs])
 
 
+_prefix_cache: "OrderedDict[tuple, list[int]]" = OrderedDict()
+_PREFIX_MAX = 1024
+_prefix_lock = threading.Lock()
+
+
+def _prefix_ids(tok, i: int, end: int, render_prefix, tokenize) -> list[int]:
+    """Token ids of messages[:end] rendered by the chat template. When every
+    segment up to here is approved shared content, the render is a function of
+    those digests, so it is cached (an org's system prompt is rendered once).
+    The caller still checks the ids against the request's own prompt."""
+    digests = tuple(seg.content_sha256 for seg in tok.segments[: i + 1])
+    key = (end, digests) if all(digests) else None
+    if key is not None:
+        with _prefix_lock:
+            hit = _prefix_cache.get(key)
+            if hit is not None:
+                _prefix_cache.move_to_end(key)
+                return hit
+    ids = list(tokenize(render_prefix(end)))
+    if key is not None:
+        with _prefix_lock:
+            _prefix_cache[key] = ids
+            if len(_prefix_cache) > _PREFIX_MAX:
+                _prefix_cache.popitem(last=False)
+    return ids
+
+
 def label_request(
     cfg: Config,
     ver: Verifier,
@@ -183,11 +242,17 @@ def label_request(
     gives exactly the first tokens of input_ids; otherwise the whole request
     falls back to its most private scope.
     """
+    with _timed("ingress"):
+        return _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefix, tokenize)
+
+
+def _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefix, tokenize) -> str:
     if not token_header:
         raise TokenError("missing X-Ifab-Token")
-    tok = ver.verify(token_header)
-    msgs = digest_messages(raw_messages)
-    _check_text_messages(tok, msgs)
+    with _timed("ingress.verify"):
+        tok = ver.verify(token_header)
+        msgs = digest_messages(raw_messages)
+        _check_text_messages(tok, msgs)
 
     most_private = str(tok.effective[-1])
     runs: list = []
@@ -197,7 +262,8 @@ def label_request(
             runs.append([None, str(eff)])
             break
         try:
-            prefix_ids = list(tokenize(render_prefix(end)))
+            with _timed("ingress.boundary"):
+                prefix_ids = _prefix_ids(tok, i, end, render_prefix, tokenize)
         except Exception as e:  # templates may refuse partial conversations
             log.warning("ifabsec: prefix render failed (%s); isolating request", e)
             runs = [[None, most_private]]
@@ -314,7 +380,8 @@ def scoped_key(req: Any, token_ids: Sequence[int]):
     rid = str(getattr(req, "rid", ""))
     runs = _runs_for(cfg, rid, salt, getattr(req, "origin_input_ids", ()))
     if runs is not None:
-        packed = pack(token_ids, runs)
+        with _timed("key"):
+            packed = pack(token_ids, runs)
         if packed is not None:
             return packed, LABELED_NAMESPACE
         _dbg("scheduler", f"rid={rid}", "token id out of range; isolating")
