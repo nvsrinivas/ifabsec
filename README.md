@@ -27,9 +27,11 @@ org.
 
 ## Why not just isolate every tenant?
 
-Per-tenant isolation (for example a per-request cache salt) is safe, but it
-throws away the cache hits on prompts that are legitimately shared: an org's
-system prompt, tool schemas, shared documents. ifabsec's claim is **the same
+Per-tenant isolation is safe, but it throws away the cache hits on prompts
+that are legitimately shared: an org's system prompt, tool schemas, shared
+documents. SGLang already has a per-request `cache_salt` that isolates a whole
+prompt; it is also chosen by the client, so on its own it relies on the client
+picking it honestly. ifabsec's claim is **the same
 isolation as per-tenant salting, while keeping the hits on approved shared
 content**. The v0.1 benchmark exists to measure exactly that.
 
@@ -43,10 +45,12 @@ content**. The v0.1 benchmark exists to measure exactly that.
 | `gateway/cmd/ifabsec-mint` | Go CLI: generate a gateway key, mint test tokens | Works |
 | `engine/ifabsec_engine` | Python: verify tokens, check approved content, per-token scopes, page alignment, scoped cache keys | Tested |
 | `engine/ifabsec_engine/refcache.py` | Reference prefix cache used as the test oracle | Tested |
+| `engine/ifabsec_engine/sglang_glue.py` | Ingress labeling and scoped radix-key ids for SGLang | Tested (no GPU) |
+| `engine/sglang/` | The SGLang patch, pinned commit, run instructions and GPU checklist | Written, not yet run on a GPU |
 | `testdata/token_vector_v1.json` | A Go-minted token both test suites check, so the implementations can't drift | — |
 
-Not here yet: the SGLang patch, the attack harness and the benchmark. See the
-roadmap.
+Not here yet: a GPU run of the patch, the attack harness and the benchmark.
+See the roadmap and `engine/sglang/README.md`.
 
 ## Run the tests
 
