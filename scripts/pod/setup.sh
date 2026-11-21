@@ -33,6 +33,7 @@ if git apply --check -R "$PATCH" 2>/dev/null; then
 else
   git fetch --filter=blob:none origin "$COMMIT" 2>/dev/null || git fetch origin
   git checkout -f "$COMMIT"
+  rm -f python/sglang/srt/ifabsec_hooks.py  # left over from an older version of the patch
   git apply "$PATCH"
   echo "patch applied"
 fi
