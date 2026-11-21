@@ -11,6 +11,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import heapq
 import threading
 import time
 from dataclasses import dataclass
@@ -170,6 +171,7 @@ class Verifier:
         self._keys = {kid: Ed25519PublicKey.from_public_bytes(k) for kid, k in keys.items()}
         self._now = now
         self._seen: dict[str, int] = {}
+        self._expiry: list[tuple[int, str]] = []  # min-heap of (until, jti)
         self._lock = threading.Lock()
 
     def verify(self, token: str) -> VerifiedToken:
@@ -202,11 +204,14 @@ class Verifier:
 
     def _mark_seen(self, jti: str, until: int, now: int) -> None:
         with self._lock:
-            for k in [k for k, exp in self._seen.items() if exp <= now]:
-                del self._seen[k]
+            while self._expiry and self._expiry[0][0] <= now:
+                _, old = heapq.heappop(self._expiry)
+                if self._seen.get(old, until + 1) <= now:
+                    del self._seen[old]
             if jti in self._seen:
                 raise ReplayError("token replayed")
             self._seen[jti] = until
+            heapq.heappush(self._expiry, (until, jti))
 
 
 def check_messages(tok: VerifiedToken, messages: Sequence[Mapping[str, str]]) -> None:

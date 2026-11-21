@@ -57,7 +57,7 @@ def _dbg(*parts) -> None:
 
 
 _PROFILE = os.environ.get("IFAB_PROFILE") == "1"
-_prof: dict[str, list] = {}
+_prof: dict[str, list] = {}  # name -> [calls, wall seconds, cpu seconds]
 _prof_lock = threading.Lock()
 
 
@@ -69,20 +69,27 @@ class _timed:
         self.name = name
 
     def __enter__(self):
-        self.t0 = time.perf_counter() if _PROFILE else 0.0
+        if _PROFILE:
+            self.t0, self.c0 = time.perf_counter(), time.thread_time()
         return self
 
     def __exit__(self, *exc):
         if not _PROFILE:
             return False
-        dt = time.perf_counter() - self.t0
+        wall, cpu = time.perf_counter() - self.t0, time.thread_time() - self.c0
         with _prof_lock:
-            calls_total = _prof.setdefault(self.name, [0, 0.0])
-            calls_total[0] += 1
-            calls_total[1] += dt
-            if self.name == "ingress" and calls_total[0] % 200 == 0:
-                summary = " ".join(f"{k}={v[1] / v[0] * 1e6:.0f}us/{v[0]}" for k, v in sorted(_prof.items()))
-                print("[ifabsec-profile]", summary, file=sys.stderr, flush=True)
+            st = _prof.setdefault(self.name, [0, 0.0, 0.0])
+            st[0] += 1
+            st[1] += wall
+            st[2] += cpu
+            # Each process prints its own stages: ingress in the HTTP process,
+            # sched.* in the scheduler (called many times per request).
+            every = {"ingress": 200, "sched": 2000}.get(self.name)
+            if every and st[0] % every == 0:
+                role = "http" if self.name == "ingress" else "scheduler"
+                summary = " ".join(f"{k}={v[1] / v[0] * 1e6:.0f}us(cpu {v[2] / v[0] * 1e6:.0f})/{v[0]}"
+                                   for k, v in sorted(_prof.items()))
+                print(f"[ifabsec-profile] {role}", summary, file=sys.stderr, flush=True)
         return False
 
 
@@ -101,14 +108,15 @@ class Config:
     audience: str = ""
     gateway_keys: Mapping[str, bytes] = None  # kid -> Ed25519 public key
     internal_key: bytes = b""  # shared by ingress and scheduler processes
+    observe: bool = False  # IFAB_MODE=observe: every check runs, cache keyed like stock (measuring cost only)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Config":
         mode = env.get("IFAB_MODE", "off")
         if mode == "off":
             return cls(enforce=False)
-        if mode != "enforce":
-            raise ValueError(f"IFAB_MODE must be 'off' or 'enforce', got {mode!r}")
+        if mode not in ("enforce", "observe"):
+            raise ValueError(f"IFAB_MODE must be 'off', 'enforce' or 'observe', got {mode!r}")
         keys = {}
         for item in filter(None, env.get("IFAB_GATEWAY_KEYS", "").split(",")):
             kid, _, hexkey = item.partition(":")
@@ -120,7 +128,7 @@ class Config:
                 "IFAB_MODE=enforce needs IFAB_AUDIENCE, IFAB_GATEWAY_KEYS (kid:hex,...) "
                 "and IFAB_INTERNAL_KEY (>= 32 bytes hex)"
             )
-        return cls(True, audience, keys, internal)
+        return cls(True, audience, keys, internal, observe=mode == "observe")
 
 
 _config: Optional[Config] = None
@@ -238,12 +246,29 @@ def label_request(
     """Ingress. Returns the internal cache salt, or raises TokenError.
 
     render_prefix(k) renders messages[:k] with the chat template (no generation
-    prompt). A segment boundary is trusted only if tokenizing that render
-    gives exactly the first tokens of input_ids; otherwise the whole request
-    falls back to its most private scope.
+    prompt). A segment boundary is the number of leading tokens that render
+    shares with input_ids, so only tokens of the approved render are shared.
+    If that leaves no tokens for a segment, the whole request falls back to
+    its most private scope.
     """
     with _timed("ingress"):
         return _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefix, tokenize)
+
+
+# A render of a partial chat may end in a few tokens the full prompt doesn't
+# have (an end-of-text marker). More disagreement than this means the template
+# renders the approved messages differently in context: isolate instead.
+_MAX_TEMPLATE_TAIL = 8
+
+
+def _common_prefix_len(a: Sequence[int], b: Sequence[int]) -> int:
+    n = min(len(a), len(b))
+    if array("q", a[:n]) == array("q", b[:n]):  # the usual case, compared in C
+        return n
+    for i in range(n):
+        if a[i] != b[i]:
+            return i
+    return n
 
 
 def _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefix, tokenize) -> str:
@@ -268,12 +293,18 @@ def _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefi
             log.warning("ifabsec: prefix render failed (%s); isolating request", e)
             runs = [[None, most_private]]
             break
-        n = len(prefix_ids)
+        # The boundary is where the render of messages[:end] and the full prompt
+        # stop agreeing. Every token before it equals the render of approved
+        # messages, so it can't carry user text. Templates that close a partial
+        # conversation (Phi appends an end-of-text token) just move it earlier.
+        n = _common_prefix_len(prefix_ids, input_ids)
         prev_end = runs[-1][0] if runs else 0
-        if n == 0 or n <= prev_end or n > len(input_ids) or list(input_ids[:n]) != prefix_ids:
+        if n <= prev_end or len(prefix_ids) - n > _MAX_TEMPLATE_TAIL:
             log.warning("ifabsec: segment boundary not token-stable; isolating request")
             runs = [[None, most_private]]
             break
+        if n < len(prefix_ids):
+            _dbg("ingress", f"boundary {n} of {len(prefix_ids)} rendered tokens (template closes partial chats)")
         runs.append([n, str(eff)])
     salt = encode_salt(cfg.internal_key, runs, input_ids)
     _dbg("ingress", _ids_summary(input_ids), f"runs={runs}", f"salt={salt[:20]}")
@@ -377,12 +408,16 @@ def scoped_key(req: Any, token_ids: Sequence[int]):
     salt = getattr(req, "cache_salt", None)
     if not cfg.enforce:
         return token_ids, salt
-    rid = str(getattr(req, "rid", ""))
-    runs = _runs_for(cfg, rid, salt, getattr(req, "origin_input_ids", ()))
-    if runs is not None:
-        with _timed("key"):
-            packed = pack(token_ids, runs)
-        if packed is not None:
-            return packed, LABELED_NAMESPACE
-        _dbg("scheduler", f"rid={rid}", "token id out of range; isolating")
-    return token_ids, ISOLATE_PREFIX + rid
+    with _timed("sched"):
+        rid = str(getattr(req, "rid", ""))
+        with _timed("sched.unseal"):
+            runs = _runs_for(cfg, rid, salt, getattr(req, "origin_input_ids", ()))
+        if cfg.observe:
+            return token_ids, None  # measurement only: stock keys, no isolation
+        if runs is not None:
+            with _timed("sched.pack"):
+                packed = pack(token_ids, runs)
+            if packed is not None:
+                return packed, LABELED_NAMESPACE
+            _dbg("scheduler", f"rid={rid}", "token id out of range; isolating")
+        return token_ids, ISOLATE_PREFIX + rid

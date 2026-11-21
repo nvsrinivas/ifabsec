@@ -2,6 +2,7 @@
 package token
 
 import (
+	"container/heap"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -92,8 +93,28 @@ type Verifier struct {
 	Keys     map[string]ed25519.PublicKey // by kid
 	Now      func() time.Time             // defaults to time.Now
 
-	mu   sync.Mutex
-	seen map[string]int64 // jti -> exp
+	mu     sync.Mutex
+	seen   map[string]int64 // jti -> exp
+	expiry expiryHeap
+}
+
+type expiryEntry struct {
+	until int64
+	jti   string
+}
+
+// expiryHeap orders seen tokens by expiry, so pruning never scans the whole map.
+type expiryHeap []expiryEntry
+
+func (h expiryHeap) Len() int           { return len(h) }
+func (h expiryHeap) Less(i, j int) bool { return h[i].until < h[j].until }
+func (h expiryHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *expiryHeap) Push(x any)        { *h = append(*h, x.(expiryEntry)) }
+func (h *expiryHeap) Pop() any {
+	old := *h
+	e := old[len(old)-1]
+	*h = old[:len(old)-1]
+	return e
 }
 
 // Verified is a token that passed every check, with its scopes parsed.
@@ -161,15 +182,17 @@ func (v *Verifier) markSeen(jti string, until, now int64) error {
 	if v.seen == nil {
 		v.seen = map[string]int64{}
 	}
-	for k, exp := range v.seen { // small map in practice; prune expired entries
-		if exp <= now {
-			delete(v.seen, k)
+	for v.expiry.Len() > 0 && v.expiry[0].until <= now {
+		e := heap.Pop(&v.expiry).(expiryEntry)
+		if exp, ok := v.seen[e.jti]; ok && exp <= now {
+			delete(v.seen, e.jti)
 		}
 	}
 	if _, dup := v.seen[jti]; dup {
 		return ErrReplay
 	}
 	v.seen[jti] = until
+	heap.Push(&v.expiry, expiryEntry{until, jti})
 	return nil
 }
 
