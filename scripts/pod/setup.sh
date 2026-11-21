@@ -43,7 +43,12 @@ if ! command -v cargo >/dev/null 2>&1; then
   export SGLANG_BUILD_RUST_EXTS="${SGLANG_BUILD_RUST_EXTS:-none}"
   echo "cargo not found: SGLANG_BUILD_RUST_EXTS=$SGLANG_BUILD_RUST_EXTS"
 fi
-pip install -q -e "$SG/python"
+if ! pip install -q -e "$SG/python"; then
+  # Base images often ship distro-installed Python packages pip can't uninstall
+  # ("no RECORD file"). Install over them instead.
+  echo "retrying with --ignore-installed"
+  pip install -q --ignore-installed -e "$SG/python"
+fi
 pip install -q -e "$REPO/engine"
 python -c "import sglang, ifabsec_engine; print('sglang', sglang.__version__)"
 
