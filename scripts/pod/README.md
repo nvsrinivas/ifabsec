@@ -35,12 +35,15 @@ cd ifabsec
 ```sh
 bash scripts/pod/setup.sh             # pinned SGLang + patch + dev keys
 python scripts/pod/check.py           # default model: Qwen/Qwen3-8B
+python attack/run_pod.py              # the attacks, stock vs labels
 ```
 
 `check.py` starts the patched server twice. First with enforcement off, to
 show the leak on stock behavior, then with enforcement on. It prints a PASS or
 FAIL line per check and writes `.pod/results.json` plus both server logs.
-Send me the results file and any FAIL lines.
+`attack/run_pod.py` then runs the attacks in `attack/README.md` against
+both modes and prints a stock-vs-labels table (`.pod/attack.json`). Send me
+both results files and any FAIL lines.
 
 ## What to expect
 
