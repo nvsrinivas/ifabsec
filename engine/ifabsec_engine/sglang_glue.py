@@ -238,12 +238,27 @@ def label_request(
     """Ingress. Returns the internal cache salt, or raises TokenError.
 
     render_prefix(k) renders messages[:k] with the chat template (no generation
-    prompt). A segment boundary is trusted only if tokenizing that render
-    gives exactly the first tokens of input_ids; otherwise the whole request
-    falls back to its most private scope.
+    prompt). A segment boundary is the number of leading tokens that render
+    shares with input_ids, so only tokens of the approved render are shared.
+    If that leaves no tokens for a segment, the whole request falls back to
+    its most private scope.
     """
     with _timed("ingress"):
         return _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefix, tokenize)
+
+
+# A render of a partial chat may end in a few tokens the full prompt doesn't
+# have (an end-of-text marker). More disagreement than this means the template
+# renders the approved messages differently in context: isolate instead.
+_MAX_TEMPLATE_TAIL = 8
+
+
+def _common_prefix_len(a: Sequence[int], b: Sequence[int]) -> int:
+    n = min(len(a), len(b))
+    for i in range(n):
+        if a[i] != b[i]:
+            return i
+    return n
 
 
 def _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefix, tokenize) -> str:
@@ -268,12 +283,18 @@ def _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefi
             log.warning("ifabsec: prefix render failed (%s); isolating request", e)
             runs = [[None, most_private]]
             break
-        n = len(prefix_ids)
+        # The boundary is where the render of messages[:end] and the full prompt
+        # stop agreeing. Every token before it equals the render of approved
+        # messages, so it can't carry user text. Templates that close a partial
+        # conversation (Phi appends an end-of-text token) just move it earlier.
+        n = _common_prefix_len(prefix_ids, input_ids)
         prev_end = runs[-1][0] if runs else 0
-        if n == 0 or n <= prev_end or n > len(input_ids) or list(input_ids[:n]) != prefix_ids:
+        if n <= prev_end or len(prefix_ids) - n > _MAX_TEMPLATE_TAIL:
             log.warning("ifabsec: segment boundary not token-stable; isolating request")
             runs = [[None, most_private]]
             break
+        if n < len(prefix_ids):
+            _dbg("ingress", f"boundary {n} of {len(prefix_ids)} rendered tokens (template closes partial chats)")
         runs.append([n, str(eff)])
     salt = encode_salt(cfg.internal_key, runs, input_ids)
     _dbg("ingress", _ids_summary(input_ids), f"runs={runs}", f"salt={salt[:20]}")

@@ -197,3 +197,24 @@ def test_prefix_boundary_cache_still_checks_the_prompt(cfg):
     salt = g.label_request(cfg, g.verifier(), token_for("carol", "acme", msgs), msgs, ids,
                            counting_render(msgs), tokenize)
     assert g.decode_salt(INTERNAL, salt, ids) == [(None, g.scope_id("user:carol"))]
+
+
+def test_template_that_closes_partial_chats_still_shares(cfg):
+    """Phi-style templates append an end-of-text token when no generation prompt
+    is requested. The shared boundary stops before it instead of isolating."""
+    msgs = [SYSTEM, {"role": "user", "content": "hi"}]
+    full = tokenize(render(msgs, gen=True))
+    phi_render = lambda k: render(msgs[:k]) + "\u00a7"  # one end-of-text token in this char tokenizer
+    salt = g.label_request(cfg, g.verifier(), token_for("alice", "acme", msgs), msgs, full, phi_render, tokenize)
+    runs = g.decode_salt(INTERNAL, salt, full)
+    assert runs[0] == (len(render(msgs[:1])), g.scope_id("org:acme"))  # boundary at the system prompt's end
+
+
+def test_boundary_never_extends_past_the_approved_render(cfg):
+    """Even if the user's text starts exactly like the render's trailing tokens,
+    the shared span is capped at the render's own length."""
+    msgs = [SYSTEM, {"role": "user", "content": "hi"}]
+    full = tokenize(render(msgs, gen=True))
+    short_render = lambda k: render(msgs[:k])[:-5]  # a render shorter than the real boundary
+    salt = g.label_request(cfg, g.verifier(), token_for("alice", "acme", msgs), msgs, full, short_render, tokenize)
+    assert g.decode_salt(INTERNAL, salt, full)[0][0] == len(render(msgs[:1])) - 5
