@@ -77,3 +77,4 @@ def test_transcript_records_every_probe(enforce):
         assert et["recovered"] == et["account"] and len(et["steps"]) == 6
     else:
         assert et["recovered"] == "" and et["steps"][0]["picked"] is None
+        assert len(set(et["steps"][0]["cached_by_digit"].values())) == 1  # every digit looks the same
