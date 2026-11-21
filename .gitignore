@@ -1,0 +1,11 @@
+# secrets
+*.seed
+
+# Python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/
+
+# Go
+/gateway/ifabsec-mint
