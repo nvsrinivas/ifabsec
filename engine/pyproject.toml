@@ -1,0 +1,21 @@
+[project]
+name = "ifabsec-engine"
+version = "0.0.1"
+description = "Engine-side label-token verification and scoped prefix-cache keys for ifabsec"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+dependencies = ["cryptography>=42"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["ifabsec_engine"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
