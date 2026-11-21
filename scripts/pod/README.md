@@ -36,6 +36,7 @@ cd ifabsec
 bash scripts/pod/setup.sh             # pinned SGLang + patch + dev keys
 python scripts/pod/check.py           # default model: Qwen/Qwen3-8B
 python attack/run_pod.py              # the attacks, stock vs labels
+python bench/latency.py               # latency: stock vs per-user salt vs labels
 ```
 
 `check.py` starts the patched server twice. First with enforcement off, to

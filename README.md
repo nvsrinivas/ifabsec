@@ -48,6 +48,7 @@ content**. The v0.1 benchmark exists to measure exactly that.
 | `engine/ifabsec_engine/sglang_glue.py` | Ingress labeling and scoped radix-key ids for SGLang | Tested (no GPU) |
 | `engine/sglang/` | The SGLang patch, pinned commit, run instructions and GPU checklist | Written, not yet run on a GPU |
 | `attack/` | Guessing and digit-extraction attacks over timing and cached-token counts, a fake server, and the pod runner | Tested on the fake server |
+| `bench/` | Latency and throughput under multi-tenant load: stock vs per-user salt vs labels | Tested locally; needs a GPU run |
 | `sim/` | Hit-rate simulation: stock vs per-org vs per-user isolation vs labels | Runs in seconds |
 | `testdata/token_vector_v1.json` | A Go-minted token both test suites check, so the implementations can't drift | — |
 
