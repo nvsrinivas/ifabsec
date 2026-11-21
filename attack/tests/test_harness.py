@@ -63,3 +63,17 @@ def test_org_prompt_still_shared_under_enforcement():
     p = harness._send(server, "m", minter, "eve", "acme", system, "hello")
     org_len = len(server.tok.apply_chat_template([system]))
     assert p.cached == org_len
+
+
+@pytest.mark.parametrize("enforce", [False, True])
+def test_transcript_records_every_probe(enforce):
+    from attack import transcript
+
+    server = FakeServer(enforce, KEYS, INTERNAL)
+    gt = transcript.guess_trial(server, "m", minter)
+    assert len(gt["probes"]) == 20 and sum(p["is_secret"] for p in gt["probes"]) == 1
+    et = transcript.extract_trial(server, "m", minter)
+    if not enforce:
+        assert et["recovered"] == et["account"] and len(et["steps"]) == 6
+    else:
+        assert et["recovered"] == "" and et["steps"][0]["picked"] is None
