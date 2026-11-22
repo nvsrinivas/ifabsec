@@ -173,7 +173,7 @@ The priority is an outside review of the token design. After that: lower ingress
 
 Srinivas N. Veereshwara. Carrying zero trust from the network edge into AI inference.
 
-This paper was written with AI assistance (Claude), and the prototype was built and run by the author with AI assistance. All measurements come from runs on rented NVIDIA A100 and RTX 4090 GPUs; the raw results and the code to reproduce them are in the [repository](https://github.com/nvsrinivas/ifabsec).
+Design, direction and verification by the author; much of the code and text was written with AI assistance (Claude). All measurements come from runs on rented NVIDIA A100 and RTX 4090 GPUs; the raw results and the code to reproduce them are in the [repository](https://github.com/nvsrinivas/ifabsec).
 
 ## Sources
 

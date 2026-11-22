@@ -38,7 +38,7 @@ Without the token count, latency carries the signal when the match is long, beca
 
 ![Real run on an A100, a separate trial where Alice's account is 682554: the right guess returns in 31.7 ms against 63-77 ms; with labels it blends in](img/story-timing.svg)
 
-The right candidate returned in 31.7 ms; the 19 wrong ones took 63 to 77 ms. The gap is invisible to a person and trivial for a script. Across ten trials on the A100, timing alone picked the right account in nine.
+The right candidate returned in 31.7 ms; the 19 wrong ones took 63 to 77 ms. The gap is invisible to a person and trivial for a script. Across ten trials on the A100, timing alone picked the right account in nine. Those probes ran on the same machine as the server. Over a real network, jitter and queueing blur a 30 ms gap, so an attacker needs repeated probes and averaging; the cached-token count suffers from none of that.
 
 On vLLM, the other server tested, the count moves in steps of 16 tokens, so a single guessed digit rarely shows up, and reading the number digit by digit failed. Confirming a guess still worked: on the same A100, the cached-token count and timing each picked Alice's account from the 20 candidates in all ten trials.
 
@@ -70,7 +70,7 @@ The prototype, ifabsec, carries the decision into the engine.
 2. **Verification at the engine's front door.** The server's HTTP process checks the signature, expiry and replay, then maps each segment to token positions. Requests without a valid label share nothing.
 3. **Scoped cache keys.** Inside the engine, each cached token is keyed by (scope, token) rather than by token alone; vLLM, which caches in 16-token blocks, gets the scope in each block's key. Identical text under different scopes never matches, so Eve can type Alice's sentence word for word and still miss her cache entry.
 
-A token's state depends on everything before it, so scopes can only narrow along a prompt: shared instructions first, private content after. That matches how real prompts are built.
+A token's state depends on everything before it, so scopes can only narrow along a prompt: shared instructions first, private content after. That matches how most prompts are built, and it is worth designing for in RAG and agent pipelines: put the org's instructions first, then team tools and shared documents, then each user's own memory and message. A private block placed early makes everything after it private.
 
 ![Who reuses what after Alice's question: Alice reuses both parts, Eve reuses only the company instructions, someone at another company reuses nothing](img/story-scopes.svg)
 
@@ -94,7 +94,7 @@ A simpler idea: have the gateway write an opaque user tag right after the compan
 
 ## Beyond a single assistant
 
-The same shape turns up wherever one server answers to many principals that share some text but must not share the rest: an internal AI platform serving many teams, each with approved instructions and tools, or a fleet of agents with different permissions running on shared base instructions.
+The strongest case is between companies: a platform serving several customers from one GPU pool can give each the full benefit of its own shared prompts while keeping customers strictly apart. The same shape turns up wherever one server answers to many principals that share some text but must not share the rest: an internal AI platform serving many teams, each with approved instructions and tools, or a fleet of agents with different permissions running on shared base instructions.
 
 The label is not specific to the prefix cache. Routing requests across replicas, and moving KV data between prefill and decode nodes in disaggregated serving, could carry the same scope. Only the cache has been built and measured so far.
 
@@ -123,4 +123,4 @@ The companion [white paper](whitepaper.md), *ifabsec: zero trust inside the infe
 
 *About the author.* Srinivas N. Veereshwara. Carrying zero trust from the network edge into AI inference.
 
-*AI use.* This article was written with AI assistance (Claude), and the project was built and run by the author with AI assistance. All experiments ran on rented NVIDIA A100 and RTX 4090 GPUs; the code, raw results and demo recording are in the [repository](https://github.com/nvsrinivas/ifabsec).
+*AI use.* Design, direction and verification by the author; much of the code and text was written with AI assistance (Claude). All experiments ran on rented NVIDIA A100 and RTX 4090 GPUs; the code, raw results and demo recording are in the [repository](https://github.com/nvsrinivas/ifabsec).
