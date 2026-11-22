@@ -30,8 +30,8 @@ org.
 Per-tenant isolation is safe, but it throws away the cache hits on prompts
 that are legitimately shared: an org's system prompt, tool schemas, shared
 documents. SGLang already has a per-request `cache_salt` that isolates a whole
-prompt; it is also chosen by the client, so on its own it relies on the client
-picking it honestly. ifabsec's claim is **the same
+prompt; it is set per request, so it is only as trustworthy as whoever sets it
+(ifabsec has the gateway set scopes and rejects client-chosen salts). ifabsec's claim is **the same
 isolation as per-tenant salting, while keeping the hits on approved shared
 content**. The v0.1 benchmark exists to measure exactly that.
 
@@ -45,18 +45,18 @@ content**. The v0.1 benchmark exists to measure exactly that.
 | `gateway/cmd/ifabsec-mint` | Go CLI: generate a gateway key, mint test tokens | Works |
 | `engine/ifabsec_engine` | Python: verify tokens, check approved content, per-token scopes, page alignment, scoped cache keys | Tested |
 | `engine/ifabsec_engine/refcache.py` | Reference prefix cache used as the test oracle | Tested |
-| `engine/ifabsec_engine/sglang_glue.py` | Ingress labeling and scoped radix-key ids for SGLang | Tested (no GPU) |
-| `engine/sglang/` | The SGLang patch, pinned commit, run instructions and GPU checklist | Written, not yet run on a GPU |
-| `attack/` | Guessing and digit-extraction attacks over timing and cached-token counts, a fake server, and the pod runner | Tested on the fake server |
-| `bench/` | Latency and throughput under multi-tenant load: stock vs per-user salt vs labels | Tested locally; needs a GPU run |
+| `engine/ifabsec_engine/sglang_glue.py` | Ingress labeling and scoped radix-key ids for SGLang | Tested; run on GPUs |
+| `engine/sglang/` | The SGLang patch, pinned commit, run instructions and GPU checklist | Run on RTX 4090 and A100 GPUs |
+| `attack/` | Guessing and digit-extraction attacks over timing and cached-token counts, a fake server, and the pod runner | Run on RTX 4090 and A100 GPUs |
+| `bench/` | Latency and throughput under multi-tenant load: stock vs per-user salt vs labels | Run on RTX 4090 and A100 GPUs |
 | `sim/` | Hit-rate simulation: stock vs per-org vs per-user isolation vs labels | Runs in seconds |
 | `testdata/token_vector_v1.json` | A Go-minted token both test suites check, so the implementations can't drift | — |
 
-Not here yet: a GPU run of the patch, the attacks and the latency benchmark.
-See the roadmap and `engine/sglang/README.md`.
+Not here yet: the gateway service that turns tunnel identity into tokens, tool
+schemas in the approved content, and a port to other engines. See the roadmap.
 
 White paper: [`docs/whitepaper.md`](docs/whitepaper.md) (design, threat model, results, related work).
-Plain-language version: [`docs/story.md`](docs/story.md).
+Magazine-style article: [`docs/story.md`](docs/story.md).
 
 ## Results so far
 
@@ -99,7 +99,7 @@ that test fail, which is the leak.
 
 | Version | Adds | Shows |
 |---|---|---|
-| **v0.1** | SGLang radix cache keyed by `(scope, token)`; token check at ingress; filtered cached-token counts; timing attack; baselines: stock and per-request salt | The leak, the fix, and the hits recovered vs salting |
+| **v0.1** | SGLang radix cache keyed by `(scope, token)`; token check at ingress; cached-token counts scoped by the keys; timing attack; baselines: stock and per-request salt | The leak, the fix, and the hits recovered vs salting |
 | v0.2 | Per-scope eviction quotas | Eviction-pressure probing is closed |
 | v0.3 | Gateway in front of the WireGuard ZTNA layer, end to end | Identity issued at the network edge, enforced in the engine |
 | v0.4 | Two nodes behind a cache-aware router with label-aware routing | The routing channel and its fix |

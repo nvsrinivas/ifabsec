@@ -1,17 +1,17 @@
 """ifabsec: zero-trust scopes for the prefix cache (https://github.com/nvsrinivas/ifabsec).
 
-Every hook is a no-op unless IFAB_MODE=enforce. With enforcement on:
+Every hook is a no-op unless IFAB_MODE is observe or enforce. When active:
 
 * the OpenAI chat endpoint requires a gateway-signed X-Ifab-Token, checks
   approved shared content, and attaches a MAC'd internal salt describing which
   prompt tokens belong to which scope;
 * radix-cache keys carry each token's scope, so identical text under different
   scopes never matches;
-* any request without a valid internal salt (other endpoints, forged salts,
-  multimodal requests) gets a cache namespace of its own.
+* any request without a valid internal salt (other endpoints, forged or
+  stale salts) gets a cache namespace of its own.
 
-v0.1 supports the plain RadixCache only (no HiCache, SWA/unified caches,
-or multimodal sharing).
+v0.1 supports RadixCache and the default UnifiedRadixCache (no HiCache,
+storage prefetch, SWA or multimodal sharing).
 """
 
 from __future__ import annotations
