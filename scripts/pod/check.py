@@ -92,7 +92,14 @@ class Server:
                 sys.executable, "-c", "from vllm.entrypoints.cli.main import main; main()"]
             args = [*launcher, "serve", model,
                     "--port", str(port), "--host", "127.0.0.1",
-                    "--enable-prefix-caching", "--enable-prompt-tokens-details"]
+                    "--enable-prefix-caching", "--enable-prompt-tokens-details",
+                    # Pin 16-token blocks, the finest granularity vLLM offers:
+                    # the most an attacker can learn per probe. The default can
+                    # be larger, and then short test prompts fill no block at all.
+                    "--block-size", str(BLOCK), "--prefix-match-unit", str(BLOCK),
+                    # Requests with tools need a tool parser (Qwen uses hermes).
+                    "--enable-auto-tool-choice", "--tool-call-parser",
+                    os.environ.get("IFAB_TOOL_PARSER", "hermes")]
         else:
             args = [sys.executable, "-m", "sglang.launch_server", "--model-path", model,
                     "--port", str(port), "--host", "127.0.0.1"]
