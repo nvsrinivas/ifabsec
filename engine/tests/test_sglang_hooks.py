@@ -46,8 +46,8 @@ class FakeTokenizer:
     def encode(self, text, add_special_tokens=False):
         return t.tokenize(text)
 
-    def apply_chat_template(self, msgs, tokenize=False, add_generation_prompt=False):
-        return t.render(msgs, add_generation_prompt)
+    def apply_chat_template(self, msgs, tools=None, tokenize=False, add_generation_prompt=False):
+        return t.render_tools(msgs, add_generation_prompt, tools)  # same as t.render when tools is None
 
 
 class Msg(dict):
@@ -87,3 +87,19 @@ def test_label_chat_rejects(hooks):
     adapted.image_data = ["img"]
     with pytest.raises(ValueError, match="text-only"):
         hooks.label_chat(serving, request, raw, adapted)
+
+
+class Tool(dict):
+    def model_dump(self):
+        return dict(self)
+
+
+def test_label_chat_shares_approved_tools(hooks):
+    msgs = [dict(t.SYSTEM), {"role": "user", "content": "balance?"}]
+    serving, request, raw, adapted, _ = fakes(t.tools_token("alice", "acme", msgs, t.TOOLS))
+    request.messages = [Msg(m) for m in msgs]
+    request.tools, request.tool_choice = [Tool(x) for x in t.TOOLS], "auto"
+    adapted.text = t.render_tools(msgs, True, t.TOOLS)
+    out = hooks.label_chat(serving, request, raw, adapted)
+    runs = g.decode_salt(t.INTERNAL, out.cache_salt, out.input_ids)
+    assert runs[0] == (len(t.tokenize(t.render_tools(msgs[:1], False, t.TOOLS))), g.scope_id("org:acme"))

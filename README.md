@@ -53,8 +53,8 @@ content**. The v0.1 benchmark exists to measure exactly that.
 | `sim/` | Hit-rate simulation: stock vs per-org vs per-user isolation vs labels | Runs in seconds |
 | `testdata/token_vector_v1.json` | A Go-minted token both test suites check, so the implementations can't drift | — |
 
-Not here yet: the gateway service that turns tunnel identity into tokens, tool
-schemas in the approved content, and a port to other engines. See the roadmap.
+Not here yet: the gateway service that turns tunnel identity into tokens, a GPU
+run of shared tool schemas, and a port to other engines. See the roadmap.
 
 White paper: [`docs/whitepaper.md`](docs/whitepaper.md) (design, threat model, results, related work).
 Magazine-style article: [`docs/story.md`](docs/story.md).

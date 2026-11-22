@@ -156,3 +156,18 @@ def test_key_limited_to_its_orgs():
         limited.verify(mint(claims()))  # an acme token signed by a key that serves only beta
     ok = Verifier("cluster-1", {"gw-key-1": pub}, now=lambda: T0 + 10, key_orgs={"gw-key-1": frozenset({"acme"})})
     assert ok.verify(mint(claims())).effective
+
+
+def test_tools_digest_matches_go_vector():
+    import json
+    from pathlib import Path
+
+    from ifabsec_engine import tools_digest
+
+    v = json.loads((Path(__file__).parents[2] / "testdata" / "tools_vector_v1.json").read_text())
+    assert tools_digest(v["tools"]) == v["tools_sha256"]
+
+
+def test_tools_sha256_claim_must_be_hex(verifier):
+    with pytest.raises(FormatError):
+        verifier.verify(mint(claims(tools_sha256="not-a-digest")))

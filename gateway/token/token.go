@@ -44,6 +44,10 @@ type Claims struct {
 	JTI      string    `json:"jti"`
 	Read     []string  `json:"read"`
 	Segments []Segment `json:"segments"`
+	// ToolsSHA256 approves the request's tool schemas (see ToolsDigest). With
+	// it, the engine renders them into the shared prefix; without it, they are
+	// never shared.
+	ToolsSHA256 string `json:"tools_sha256,omitempty"`
 }
 
 // Message is the subset of a chat message that segment digests cover.
@@ -62,6 +66,38 @@ func SegmentDigest(msgs []Message) string {
 		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// ToolsDigest is tools_sha256 for a request's tools list: canonical JSON
+// (sorted keys, no spaces, no HTML escaping) of each tool reduced to type and
+// the function's name, description and parameters, null fields dropped. It
+// must match the engine's Python implementation byte for byte; schemas with
+// non-integer numbers can serialize differently, so keep them integer.
+func ToolsDigest(tools []map[string]any) (string, error) {
+	norm := make([]map[string]any, 0, len(tools))
+	for _, t := range tools {
+		typ, _ := t["type"].(string)
+		if typ == "" {
+			typ = "function"
+		}
+		fn := map[string]any{}
+		if f, ok := t["function"].(map[string]any); ok {
+			for _, k := range []string{"name", "description", "parameters"} {
+				if v, ok := f[k]; ok && v != nil {
+					fn[k] = v
+				}
+			}
+		}
+		norm = append(norm, map[string]any{"type": typ, "function": fn})
+	}
+	var buf strings.Builder
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(norm); err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(strings.TrimSuffix(buf.String(), "\n")))
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // NewJTI returns a random 16-byte nonce, base64url encoded.
@@ -210,6 +246,12 @@ func checkClaims(c *Claims) ([]Scope, error) {
 	}
 	if j, err := b64.DecodeString(c.JTI); err != nil || len(j) < minJTIBytes {
 		return nil, fmt.Errorf("%w: jti must be >= %d random bytes", ErrFormat, minJTIBytes)
+	}
+	if c.ToolsSHA256 != "" {
+		if d, err := hex.DecodeString(c.ToolsSHA256); err != nil || len(d) != sha256.Size ||
+			c.ToolsSHA256 != strings.ToLower(c.ToolsSHA256) {
+			return nil, fmt.Errorf("%w: tools_sha256 must be 64 lowercase hex characters", ErrFormat)
+		}
 	}
 	read := map[string]bool{}
 	for _, r := range c.Read {

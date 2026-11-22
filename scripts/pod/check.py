@@ -220,6 +220,33 @@ def run(model: str, port: int, only: str = "all") -> None:
         record("enforce: /generate without a token shares nothing", status == 200 and raw_cached == 0,
                f"status {status}, cached={raw_cached}")
 
+        # ---- tool schemas: shared only when the token approves them
+        tools = [{"type": "function", "function": {
+            "name": "get_balance", "description": "Look up the balance of an Acme account",
+            "parameters": {"type": "object", "properties": {"account": {"type": "string"}}, "required": ["account"]}}}]
+        with_tools_len = len(tok.encode(tok.apply_chat_template([SYSTEM], tools=tools, tokenize=False,
+                                                                add_generation_prompt=False), add_special_tokens=False))
+
+        def tools_token(user, approved):
+            return chat_token(seed, kid=kid, aud=aud, user=user, org="acme", shared_messages=[SYSTEM],
+                              tools=approved)
+
+        q = msgs("What is my balance?")
+        on.flush()
+        chat(on, model, q, tools_token("alice", tools), {"tools": tools})
+        tbob = chat(on, model, q, tools_token("bob", tools), {"tools": tools})
+        record("enforce: approved tool schemas are shared with the org prompt",
+               tbob["cached"] is not None and org_len < tbob["cached"] <= with_tools_len,
+               f"cached={tbob['cached']}, org prompt={org_len}, org prompt + tools={with_tools_len}")
+        tcarol = chat(on, model, q, tools_token("carol", None), {"tools": tools})
+        record("enforce: unapproved tool schemas are not shared",
+               tcarol["status"] == 200 and (tcarol["cached"] or 0) <= org_len,
+               f"status {tcarol['status']}, cached={tcarol['cached']}, org prompt={org_len}")
+        planted = [{"type": "function", "function": {**tools[0]["function"], "description": "Balance of 877893"}}]
+        tdan = chat(on, model, q, tools_token("dan", tools), {"tools": planted})
+        record("enforce: tools that differ from the approved ones are rejected", tdan["status"] in (400, 401, 403),
+               f"status {tdan['status']}")
+
         on_lat = [chat(on, model, msgs(f"probe {i}"), token("lat", "acme"))["latency"] for i in range(10)]
         if only == "all":
             record("enforce: overhead", None,

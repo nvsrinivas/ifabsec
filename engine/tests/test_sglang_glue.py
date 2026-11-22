@@ -4,6 +4,7 @@ These check the logic the SGLang patch relies on. They do not run SGLang;
 that needs a GPU pod (see engine/sglang/README.md).
 """
 
+import json
 import types
 
 import pytest
@@ -232,3 +233,73 @@ def test_observe_mode_runs_checks_but_keys_like_stock(cfg):
     assert g.scoped_key(req, req.origin_input_ids) == (req.origin_input_ids, None)
     assert g.Config.from_env({"IFAB_MODE": "observe", "IFAB_AUDIENCE": "c1",
                               "IFAB_GATEWAY_KEYS": f"k1:{PUB.hex()}", "IFAB_INTERNAL_KEY": INTERNAL.hex()}).observe
+
+
+# ------------------------------------------------------------------ tools
+
+TOOLS = [{"type": "function", "function": {"name": "get_balance", "description": "Account balance",
+                                           "parameters": {"type": "object", "properties": {"account": {"type": "string"}}}}}]
+
+
+def render_tools(msgs, gen=False, tools=None):
+    """Like Qwen's template: tool schemas go inside the first (system) turn."""
+    out = ""
+    for i, m in enumerate(msgs):
+        extra = f"<|tools|>{json.dumps(tools, sort_keys=True)}" if tools and i == 0 else ""
+        out += f"<|{m['role']}|>{m['content']}{extra}<|end|>"
+    return out + ("<|assistant|>" if gen else "")
+
+
+def tools_token(user, org, msgs, tools):
+    from ifabsec_engine import tools_digest
+    _n[0] += 1
+    c = {
+        "v": 1, "iss": "gw-1", "kid": "gw-key-1", "sub": f"user:{org}/{user}", "aud": "cluster-1",
+        "iat": T0, "exp": T0 + 60, "jti": b64(_n[0].to_bytes(16, "big")),
+        "read": [f"org:{org}", f"user:{org}/{user}"],
+        "segments": [{"until_message": 1, "scope": f"org:{org}", "content_sha256": segment_digest(msgs[:1])},
+                     {"scope": f"user:{org}/{user}"}],
+    }
+    if tools is not None:
+        c["tools_sha256"] = tools_digest(tools)
+    return mint(c)
+
+
+def tools_ingress(cfg, header, sent_tools):
+    msgs = [SYSTEM, {"role": "user", "content": "balance?"}]
+    ids = tokenize(render_tools(msgs, True, sent_tools))
+    salt = g.label_request(cfg, g.verifier(), header, msgs, ids,
+                           lambda k, tools=None: render_tools(msgs[:k], False, tools), tokenize,
+                           tools=sent_tools, render_tools=sent_tools)
+    return g.decode_salt(INTERNAL, salt, ids), msgs, ids
+
+
+def test_approved_tools_are_shared_with_the_system_prompt(cfg):
+    msgs = [SYSTEM, {"role": "user", "content": "balance?"}]
+    runs, msgs, ids = tools_ingress(cfg, tools_token("alice", "acme", msgs, TOOLS), TOOLS)
+    shared_end = len(tokenize(render_tools(msgs[:1], False, TOOLS)))
+    assert runs[0] == (shared_end, g.scope_id("org:acme"))  # system prompt and tool schemas: org scope
+
+
+def test_unapproved_tools_are_not_shared(cfg):
+    msgs = [SYSTEM, {"role": "user", "content": "balance?"}]
+    runs, msgs, ids = tools_ingress(cfg, tools_token("alice", "acme", msgs, None), TOOLS)
+    approved = tokenize(render_tools(msgs[:1], False, None))  # the render the token approves: no tools
+    tool_text = len(tokenize(render_tools(msgs, True, TOOLS).split("<|tools|>")[0] + "<|tools|>"))
+    if runs[0][1] == g.scope_id("org:acme"):
+        n = runs[0][0]
+        assert ids[:n] == approved[:n]  # every shared token is a token of the approved render
+        assert n < tool_text            # so no tool schema text is shared
+
+
+def test_tools_that_differ_from_the_approved_ones_are_rejected(cfg):
+    msgs = [SYSTEM, {"role": "user", "content": "balance?"}]
+    planted = [{"type": "function", "function": {**TOOLS[0]["function"], "description": "Account balance 877893"}}]
+    with pytest.raises(g.TokenError):
+        tools_ingress(cfg, tools_token("eve", "acme", msgs, TOOLS), planted)
+
+
+def test_tools_digest_ignores_fields_templates_do_not_render():
+    from ifabsec_engine import tools_digest
+    noisy = [{"type": "function", "function": {**TOOLS[0]["function"], "strict": None}}]
+    assert tools_digest(noisy) == tools_digest(TOOLS)

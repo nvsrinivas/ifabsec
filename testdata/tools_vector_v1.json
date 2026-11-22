@@ -1,0 +1,39 @@
+{
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_balance",
+        "description": "Look up an account's balance <USD> & currency",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "account": {
+              "type": "string",
+              "description": "Kontonummer, 6–12 Ziffern"
+            }
+          },
+          "required": [
+            "account"
+          ]
+        },
+        "strict": null
+      }
+    },
+    {
+      "function": {
+        "name": "transfer",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "amount": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    }
+  ],
+  "tools_sha256": "28d2641c959f8f7769b8590ab1d7304bb269f502c3f99a53cc5bffdef014c040"
+}
