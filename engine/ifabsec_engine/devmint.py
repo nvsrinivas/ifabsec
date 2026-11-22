@@ -44,7 +44,7 @@ def chat_token(
     """Token for the common shape: the first len(shared_messages) messages are
     the org's approved prompt, everything after belongs to the user."""
     now = int(time.time()) if now is None else now
-    segments = [{"scope": f"user:{user}"}]
+    segments = [{"scope": f"user:{org}/{user}"}]
     if shared_messages:
         segments.insert(0, {
             "until_message": len(shared_messages),
@@ -52,7 +52,7 @@ def chat_token(
             "content_sha256": segment_digest(shared_messages),
         })
     return mint(seed, {
-        "v": 1, "iss": "dev", "kid": kid, "sub": f"user:{user}", "aud": aud,
+        "v": 1, "iss": "dev", "kid": kid, "sub": f"user:{org}/{user}", "aud": aud,
         "iat": now, "exp": now + 60, "jti": _b64(os.urandom(16)),
-        "read": [f"org:{org}", f"user:{user}"], "segments": segments,
+        "read": [f"org:{org}", f"user:{org}/{user}"], "segments": segments,
     })

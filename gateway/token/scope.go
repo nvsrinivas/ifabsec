@@ -16,10 +16,11 @@ const (
 	KindUser
 )
 
-// Scope is a parsed cache-sharing scope: public, org:<o>, team:<o>/<t> or user:<id>.
+// Scope is a parsed cache-sharing scope: public, org:<o>, team:<o>/<t> or user:<o>/<id>.
+// User ids are namespaced by org, so the same id in two orgs is two scopes.
 type Scope struct {
 	Kind Kind
-	Org  string // org and team scopes
+	Org  string // org, team and user scopes
 	Team string // team scopes
 	User string // user scopes
 }
@@ -48,10 +49,11 @@ func ParseScope(s string) (Scope, error) {
 		}
 		return Scope{Kind: KindTeam, Org: org, Team: team}, nil
 	case "user":
-		if !identRE.MatchString(rest) {
-			return Scope{}, fmt.Errorf("scope %q: bad user id", s)
+		org, user, ok := strings.Cut(rest, "/")
+		if !ok || !identRE.MatchString(org) || !identRE.MatchString(user) {
+			return Scope{}, fmt.Errorf("scope %q: want user:<org>/<id>", s)
 		}
-		return Scope{Kind: KindUser, User: rest}, nil
+		return Scope{Kind: KindUser, Org: org, User: user}, nil
 	}
 	return Scope{}, fmt.Errorf("scope %q: unknown kind %q", s, kind)
 }
@@ -65,7 +67,7 @@ func (s Scope) String() string {
 	case KindTeam:
 		return "team:" + s.Org + "/" + s.Team
 	default:
-		return "user:" + s.User
+		return "user:" + s.Org + "/" + s.User
 	}
 }
 
@@ -73,8 +75,9 @@ func (s Scope) String() string {
 func (s Scope) Shared() bool { return s.Kind != KindUser }
 
 // IsAncestorOf reports whether everyone in b's audience is in a's audience
-// (a == b counts). User membership in orgs and teams is asserted by the
-// gateway, so org and team scopes are treated as ancestors of every user scope.
+// (a == b counts). Org and team scopes are ancestors only of scopes in the same
+// org. Team membership is asserted by the gateway, so a team scope is treated
+// as an ancestor of every user scope in its org.
 func (a Scope) IsAncestorOf(b Scope) bool {
 	if a == b {
 		return true
@@ -83,9 +86,9 @@ func (a Scope) IsAncestorOf(b Scope) bool {
 	case KindPublic:
 		return true
 	case KindOrg:
-		return (b.Kind == KindTeam && b.Org == a.Org) || b.Kind == KindUser
+		return (b.Kind == KindTeam || b.Kind == KindUser) && b.Org == a.Org
 	case KindTeam:
-		return b.Kind == KindUser
+		return b.Kind == KindUser && b.Org == a.Org
 	}
 	return false
 }

@@ -36,15 +36,15 @@ tunnel), and the engine accepts requests only from gateway identities.
   "v": 1,
   "iss": "gw-1",
   "kid": "gw-key-1",
-  "sub": "user:alice",
+  "sub": "user:acme/alice",
   "aud": "inference-cluster-1",
   "iat": 1893456000,
   "exp": 1893456060,
   "jti": "kq3m0Jx1TQ6h8w2XbqZ4Ug",
-  "read": ["public", "org:acme", "user:alice"],
+  "read": ["public", "org:acme", "user:acme/alice"],
   "segments": [
     {"until_message": 1, "scope": "org:acme", "content_sha256": "9f2c…"},
-    {"scope": "user:alice"}
+    {"scope": "user:acme/alice"}
   ]
 }
 ```
@@ -88,20 +88,22 @@ can hit, recreating a side channel inside the org.
 public
 org:<org>
 team:<org>/<team>
-user:<id>
+user:<org>/<id>
 ```
 
-Identifiers match `[a-z0-9][a-z0-9._-]{0,62}`.
+Identifiers match `[a-z0-9][a-z0-9._-]{0,62}`. User ids are namespaced by
+org, so `user:acme/alice` and `user:beta/alice` are different scopes and never
+share cache entries, even when both orgs call someone `alice`.
 
 Scopes are ordered from broadest to most private: `public` → `org` → `team` →
 `user`. `A` is an ancestor of `B` when everyone in `B`'s audience is in `A`'s:
 
 - `public` is an ancestor of every scope.
-- `org:o` is an ancestor of `team:o/t` and of every `user:…`.
-- `team:o/t` is an ancestor of every `user:…`.
+- `org:o` is an ancestor of `team:o/t` and of every `user:o/…`.
+- `team:o/t` is an ancestor of every `user:o/…`.
 
-The engine cannot check user membership in an org or team; the gateway
-asserts it by issuing the token.
+Nothing in one org is an ancestor of anything in another. The engine cannot
+check team membership; the gateway asserts it by issuing the token.
 
 ### The narrowing rule
 
@@ -116,7 +118,7 @@ effective(i) = narrower of effective(i-1) and scope(i)
 
 Two scopes must be comparable (one is an ancestor of the other), or the request
 is rejected. For example, `org:acme` followed by `team:beta/x` is rejected, and
-so is `user:alice` followed by `user:bob`. A broader segment after a narrower
+so is `user:acme/alice` followed by `user:acme/bob`. A broader segment after a narrower
 one is allowed but does not widen anything: text after user content is cached
 as the user's.
 

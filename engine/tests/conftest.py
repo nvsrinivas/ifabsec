@@ -30,13 +30,13 @@ _jti = [0]
 def claims(**over) -> dict:
     _jti[0] += 1
     c = {
-        "v": 1, "iss": "gw-1", "kid": "gw-key-1", "sub": "user:alice", "aud": "cluster-1",
+        "v": 1, "iss": "gw-1", "kid": "gw-key-1", "sub": "user:acme/alice", "aud": "cluster-1",
         "iat": T0, "exp": T0 + 60,
         "jti": b64(_jti[0].to_bytes(16, "big")),
-        "read": ["public", "org:acme", "user:alice"],
+        "read": ["public", "org:acme", "user:acme/alice"],
         "segments": [
             {"until_message": 1, "scope": "org:acme", "content_sha256": segment_digest(ORG_PROMPT)},
-            {"scope": "user:alice"},
+            {"scope": "user:acme/alice"},
         ],
     }
     c.update(over)
