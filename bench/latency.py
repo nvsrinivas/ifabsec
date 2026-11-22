@@ -6,7 +6,7 @@ Each user runs short two-turn sessions on top of it; many sessions run
 concurrently. Three policies, same workload:
 
   stock     IFAB_MODE=off, no salt: everything shared (leaks)
-  per_user  IFAB_MODE=off, cache_salt = org/user, as a gateway would set it
+  per_user  IFAB_MODE=off, cache_salt = org.user, as a gateway would set it
             with the engine's built-in salt (safe; the org prompt is cached
             once per user)
   tag       IFAB_MODE=off, no salt; the gateway writes an opaque user tag at
@@ -187,7 +187,7 @@ def http_sender(url: str, model: str, max_tokens: int, mint: Optional[Callable] 
                 "stream": True, "stream_options": {"include_usage": True}}
         headers = {"Content-Type": "application/json"}
         if policy == "per_user":
-            body["cache_salt"] = f"{org}/{user}"
+            body["cache_salt"] = f"{org}.{user}"  # vLLM rejects "/" in salts
         if policy == "tag":
             body["messages"] = tag_messages(org, user, messages)
         if policy in ("labels", "observe"):

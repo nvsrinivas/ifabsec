@@ -26,7 +26,7 @@ def fake_sender(server: FakeServer):
         body = {"messages": messages}
         headers = {}
         if policy == "per_user":
-            body["cache_salt"] = f"{org}/{user}"
+            body["cache_salt"] = f"{org}.{user}"  # vLLM rejects "/" in salts
         if policy == "tag":
             body["messages"] = tag_messages(org, user, messages)
         if policy in ("labels", "labels_shared"):
