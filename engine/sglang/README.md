@@ -49,7 +49,7 @@ pip install -e "python[all]" && pip install -e ../ifabsec/engine
 
 export IFAB_MODE=enforce
 export IFAB_AUDIENCE=cluster-1
-export IFAB_GATEWAY_KEYS="gw-key-1:$(ifabsec-mint pubkey -key gw.seed)"
+export IFAB_GATEWAY_KEYS="gw-key-1:$(ifabsec-mint pubkey -key gw.seed)"  # append :acme|beta to limit the key to those orgs
 export IFAB_INTERNAL_KEY="$(openssl rand -hex 32)"
 python -m sglang.launch_server --model-path Qwen/Qwen3-8B
 ```
