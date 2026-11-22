@@ -26,8 +26,8 @@ Ed25519 rather than HMAC so that the engine holds only public keys. A
 compromised engine host can verify tokens but cannot mint them.
 
 The token travels in the `X-Ifab-Token` HTTP header between the gateway and the
-engine. That hop is also mutually authenticated (mTLS, or the WireGuard
-tunnel), and the engine accepts requests only from gateway identities.
+engine. That hop is also mutually authenticated (mTLS, or the zero-trust
+layer itself), and the engine accepts requests only from gateway identities.
 
 ## Payload
 
