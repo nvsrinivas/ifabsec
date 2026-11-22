@@ -19,7 +19,7 @@ enforces it there:
 client or agent
   → zero-trust layer: verified identity
   → policy gateway (Go): decides scopes, mints a signed label token
-  → inference engine (SGLang + ifabsec patch): verifies the token, enforces scopes
+  → inference engine (SGLang or vLLM + ifabsec patch): verifies the token, enforces scopes
   → GPU
 ```
 
@@ -34,7 +34,7 @@ org.
 
 Per-tenant isolation is safe, but it throws away the cache hits on prompts
 that are legitimately shared: an org's system prompt, tool schemas, shared
-documents. SGLang already has a per-request `cache_salt` that isolates a whole
+documents. SGLang and vLLM already have a per-request `cache_salt` that isolates a whole
 prompt; it is set per request, so it is only as trustworthy as whoever sets it
 (ifabsec has the gateway set scopes and rejects client-chosen salts). ifabsec's claim is **the same
 isolation as per-tenant salting, while keeping the hits on approved shared
@@ -53,8 +53,10 @@ content**. The v0.1 benchmark exists to measure exactly that.
 | `engine/ifabsec_engine/refcache.py` | Reference prefix cache used as the test oracle | Tested |
 | `engine/ifabsec_engine/sglang_glue.py` | Ingress labeling and scoped radix-key ids for SGLang | Tested; run on GPUs |
 | `engine/sglang/` | The SGLang patch, pinned commit, run instructions and GPU checklist | Run on RTX 4090 and A100 GPUs |
+| `engine/ifabsec_engine/vllm_glue.py` | Scoped block-hash keys for vLLM (ingress shared with SGLang) | Tested; run on an A100 |
+| `engine/vllm/` | The vLLM patch (v0.34.0), run instructions and GPU checklist | Run on an A100 |
 | `attack/` | Guessing and digit-extraction attacks over timing and cached-token counts, a fake server, and the pod runner | Run on RTX 4090 and A100 GPUs |
-| `bench/` | Latency and throughput under multi-tenant load: stock vs per-user salt vs labels | Run on RTX 4090 and A100 GPUs |
+| `bench/` | Latency and throughput under multi-tenant load: stock vs per-user salt vs user tag vs labels | Run on RTX 4090 and A100 GPUs |
 | `sim/` | Hit-rate simulation: stock vs per-org vs per-user isolation vs labels | Runs in seconds |
 | `testdata/token_vector_v1.json` | A Go-minted token both test suites check, so the implementations can't drift | — |
 
@@ -87,6 +89,20 @@ On an A100 80GB ([`docs/results/2026-11-21-a100.md`](docs/results/2026-11-21-a10
   throughput; p95 is within ~5% of stock.
 - A second template family (Phi-4-mini) passes all checks after the
   common-prefix boundary fix.
+
+On vLLM v0.34.0, same A100 ([`docs/results/2026-11-22-a100-vllm.md`](docs/results/2026-11-22-a100-vllm.md)):
+
+- All checks pass. Stock guessing reached 100% on both channels (31 ms
+  timing gap); with labels, 0% on cached tokens and one lucky hit in ten on
+  timing (chance is 5%), with a 0.5 ms gap.
+- Extraction failed even on stock vLLM: it reports cached tokens in 16-token
+  blocks, so single digits rarely move the count. That blunts reading out a
+  short secret, not confirming a guess.
+- Labels kept stock's hit rate within 0.6 points and 92–94% of its
+  throughput; per-user salt kept 43–63%. Most of the cost is the ingress
+  checks on vLLM's single-threaded API server, not the scoped keys.
+- A user tag after the system prompt keeps sharing at 96–99% of stock
+  throughput, but changes the model's input and, in the check, its output.
 
 ## Run the tests
 

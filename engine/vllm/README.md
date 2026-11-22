@@ -6,8 +6,9 @@ one hook module. The logic lives in `ifabsec_engine/vllm_glue.py`, which reuses
 the engine-neutral ingress code the SGLang patch uses and is tested here
 without a GPU (`engine/tests/test_vllm.py`).
 
-**Status: not yet run on a GPU.** The checklist below is what
-`scripts/pod/check.py` confirms on a pod after `scripts/pod/setup-vllm.sh`.
+**Status: run on an A100** ([results](../../docs/results/2026-11-22-a100-vllm.md)).
+The checklist below is what `scripts/pod/check.py` confirms on a pod after
+`scripts/pod/setup-vllm.sh`.
 
 ## How it works
 
