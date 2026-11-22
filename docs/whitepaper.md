@@ -38,7 +38,7 @@ The gateway decides and the engine enforces, the same split as in zero-trust net
 
 The gateway signs what each part of a prompt may share. Inside SGLang, the HTTP process checks the label once, and the cache keys carry its scope from there on.
 
-1. **Identity.** A user or agent connects through a zero-trust tunnel (WireGuard) and is authenticated. In this prototype the gateway is a token library and command-line tool; the service that turns tunnel identity into tokens is future work.
+1. **Identity.** A user or agent is authenticated by the zero-trust layer. In this prototype the gateway is a token library and command-line tool; the service that turns that identity into tokens is future work.
 2. **Label token.** A policy gateway mints a short-lived Ed25519-signed token per request: which scopes the request may read (`public`, `org`, `team`, `user`) and which messages belong to which scope. A shared segment must match a content hash the gateway approved, such as the org's registered system prompt.
 3. **Scoped cache keys.** Inside SGLang, every cached token is keyed by `(scope, token)` instead of `token`. Identical text under different scopes never matches, so a probe cannot form the victim's key. The radix tree itself is unchanged.
 4. **Narrowing.** A token's cached state depends on everything before it, so a scope can only narrow along the prompt: the org's system prompt is shared across the org, and everything after the approved segment is the user's alone.
@@ -58,7 +58,7 @@ Labels defend against a tenant with ordinary API access who watches response tim
 - **Trusted:** the gateway, which authenticates users and decides what is shared, and the engine host. A compromised gateway can label anything as shared. Each gateway key can be limited to the orgs it may mint for, so one leaked key exposes only those orgs.
 - **Allowed by design:** anyone inside a scope can still probe that scope. Team-scoped text is visible to the whole team.
 - **Policy, not mechanism:** someone must decide which prompts are org-approved. The token carries that decision; it does not make it.
-- **Replay:** each engine process remembers token IDs until they expire: at most 5 minutes, plus 30 seconds of allowed clock skew. Tokens are bearer credentials, so a captured unused token works until then, and separate processes or replicas each accept it once. The gateway-to-engine hop therefore needs its own protection, such as mTLS or the tunnel, which this prototype does not provide yet.
+- **Replay:** each engine process remembers token IDs until they expire: at most 5 minutes, plus 30 seconds of allowed clock skew. Tokens are bearer credentials, so a captured unused token works until then, and separate processes or replicas each accept it once. The gateway-to-engine hop therefore needs its own protection, such as mTLS or the zero-trust layer itself, which this prototype does not provide yet.
 - **Not covered:** eviction-pressure probing (per-scope quotas planned); timing from batching and queueing; KV transfer between nodes in disaggregated serving; SGLang's other cache backends, which fail closed and lose sharing. Tool schemas passed in the API's tools field are shared only when the token approves them by hash; unapproved schemas stay in the user's scope. The engine also tokenizes the prompt and checks the signature before it can reject a bad label, which gives an attacker some cheap load.
 - **Not yet reviewed:** nobody outside this project has reviewed the token design.
 
@@ -119,7 +119,7 @@ ifabsec is a small patch plus a token library, off by default and switched on pe
 
 - **SGLang patch:** 32 added lines across 5 files, a 75-line hook module, and the ifabsec engine package (about 900 lines of Python) that the hook calls. With `IFAB_MODE=off` the engine behaves exactly like stock; `observe` runs every check but keys the cache like stock, for measuring; `enforce` turns isolation on.
 - **Inside the engine:** the HTTP process verifies the label once. It hands the scheduler an internal salt, authenticated with a server key and bound to the request's exact input tokens, so the scheduler never parses tokens and a request cannot borrow another's scopes.
-- **Gateway side:** a Go library and command-line tool mint and verify label tokens; Python verifies the same test vectors. The gateway service that turns tunnel identity into tokens is not built yet.
+- **Gateway side:** a Go library and command-line tool mint and verify label tokens; Python verifies the same test vectors. The gateway service that turns zero-trust identity into tokens is not built yet.
 - **Configuration:** the server's audience name, the gateway's public keys, each optionally limited to the orgs it may mint for, and an internal key shared by the engine's processes.
 - **Other engines:** vLLM already has a per-request `cache_salt` that seeds its block hashes. A port would apply the same scope-per-segment keying there; it has not been done.
 
@@ -145,7 +145,7 @@ The priority is an outside review of the token design. After that comes breadth:
 2. A vLLM port using its existing per-request salt.
 3. Multiple replicas: label-aware routing, and shared replay state or a policy that relies on short expiry.
 4. Disaggregated serving: scopes carried with KV transfers between prefill and decode nodes.
-5. A gateway service that turns WireGuard identity into label tokens end to end.
+5. A gateway service that turns zero-trust identity into label tokens end to end.
 6. Per-scope eviction quotas against eviction-pressure probing.
 7. A proposal to SGLang upstream for gateway-set cache scopes.
 
