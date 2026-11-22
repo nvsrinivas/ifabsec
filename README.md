@@ -7,6 +7,11 @@ leak: a cached prompt returns its first token faster, and servers often report
 how many prompt tokens were cached, so a co-tenant can test whether someone
 else just sent a given text.
 
+![Live demo on an A100: someone types an account number; on stock SGLang Eve reads it back digit by digit, with labels she gets nothing](docs/demo/demo.gif)
+
+*A real run of [`bash scripts/demo.sh`](demo/README.md) on an A100: the number was typed at a hidden prompt; Eve's
+program never received it.*
+
 ifabsec carries verified identity from the zero-trust layer into the engine and
 enforces it there:
 
