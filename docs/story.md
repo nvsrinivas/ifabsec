@@ -89,8 +89,7 @@ The label is not specific to the prefix cache. Routing requests across replicas,
 
 ## Limits and open questions
 
-- **Hosted APIs are a separate question.** A 2024 audit found cross-user cache sharing at seven API providers; what each does today is up to them. This work targets servers you run yourself, and finer boundaries inside one customer.
-- **Tool descriptions passed in the API's tools field are not shared yet.** Only those written into the system prompt are.
+- **Hosted APIs are a separate question.** A 2024 audit found cross-user cache sharing at seven API providers; what each does today is up to them. This work targets servers you run yourself, and finer boundaries inside one customer. Tool descriptions passed in the API's tools field are not shared yet; only those written into the system prompt are.
 - **The gateway is trusted.** A compromised gateway can label anything as shared, and someone still has to decide which prompts are organization-wide.
 - **Probing within a scope remains possible** by design. Anything stamped for a team is visible to that team.
 - **Other channels are untouched**, including eviction pressure and delays from batching and queueing.
