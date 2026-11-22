@@ -82,19 +82,6 @@
       "round": 1
     },
     {
-      "policy": "observe",
-      "requests": 32,
-      "hit_rate": 0.0,
-      "ttft_p50_ms": 933.8,
-      "ttft_p95_ms": 1530.8,
-      "latency_p50_ms": 1960.8,
-      "requests_per_s": 8.04,
-      "output_tokens_per_s": 257.3,
-      "prefill_tokens": 41957,
-      "users": 16,
-      "round": 1
-    },
-    {
       "policy": "stock",
       "requests": 32,
       "hit_rate": 0.8023,
@@ -156,19 +143,6 @@
       "requests_per_s": 19.27,
       "output_tokens_per_s": 616.6,
       "prefill_tokens": 8805,
-      "users": 16,
-      "round": 2
-    },
-    {
-      "policy": "observe",
-      "requests": 32,
-      "hit_rate": 0.0,
-      "ttft_p50_ms": 891.5,
-      "ttft_p95_ms": 1483.9,
-      "latency_p50_ms": 1923.7,
-      "requests_per_s": 8.15,
-      "output_tokens_per_s": 260.8,
-      "prefill_tokens": 41957,
       "users": 16,
       "round": 2
     },
@@ -238,19 +212,6 @@
       "round": 1
     },
     {
-      "policy": "observe",
-      "requests": 128,
-      "hit_rate": 0.0,
-      "ttft_p50_ms": 778.7,
-      "ttft_p95_ms": 2538.9,
-      "latency_p50_ms": 3544.8,
-      "requests_per_s": 9.02,
-      "output_tokens_per_s": 288.8,
-      "prefill_tokens": 167859,
-      "users": 64,
-      "round": 1
-    },
-    {
       "policy": "stock",
       "requests": 128,
       "hit_rate": 0.8823,
@@ -312,19 +273,6 @@
       "requests_per_s": 30.25,
       "output_tokens_per_s": 967.9,
       "prefill_tokens": 21811,
-      "users": 64,
-      "round": 2
-    },
-    {
-      "policy": "observe",
-      "requests": 128,
-      "hit_rate": 0.0,
-      "ttft_p50_ms": 933.5,
-      "ttft_p95_ms": 2549.0,
-      "latency_p50_ms": 3497.5,
-      "requests_per_s": 8.99,
-      "output_tokens_per_s": 287.6,
-      "prefill_tokens": 167859,
       "users": 64,
       "round": 2
     },
@@ -394,19 +342,6 @@
       "round": 1
     },
     {
-      "policy": "observe",
-      "requests": 512,
-      "hit_rate": 0.0,
-      "ttft_p50_ms": 679.3,
-      "ttft_p95_ms": 1106.0,
-      "latency_p50_ms": 3538.6,
-      "requests_per_s": 9.01,
-      "output_tokens_per_s": 288.3,
-      "prefill_tokens": 671413,
-      "users": 256,
-      "round": 1
-    },
-    {
       "policy": "stock",
       "requests": 512,
       "hit_rate": 0.9023,
@@ -470,19 +405,7 @@
       "prefill_tokens": 73781,
       "users": 256,
       "round": 2
-    },
-    {
-      "policy": "observe",
-      "requests": 512,
-      "hit_rate": 0.0,
-      "ttft_p50_ms": 683.3,
-      "ttft_p95_ms": 1107.8,
-      "latency_p50_ms": 3540.3,
-      "requests_per_s": 8.99,
-      "output_tokens_per_s": 287.5,
-      "prefill_tokens": 671413,
-      "users": 256,
-      "round": 2
     }
-  ]
+  ],
+  "note": "observe rows from this run were measured before a fix (they keyed the cache on a per-request salt, 0% hits) and are removed; the corrected observe run is latency-observe.json"
 }

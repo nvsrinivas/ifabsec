@@ -7,8 +7,8 @@ token, check approved content, find where each segment's tokens end, and seal
 the result into a MAC'd internal salt. On vLLM the salt rides in the request's
 ``cache_salt`` field from the API server to the EngineCore process.
 
-Keys differ. vLLM hashes the prefix cache in fixed-size blocks (16 tokens by
-default), each hash chained to its parent's, and lets extra keys join a block's
+Keys differ. vLLM hashes the prefix cache in fixed-size blocks (16 tokens in the
+A100 runs), each hash chained to its parent's, and lets extra keys join a block's
 hash. Stock vLLM adds ``cache_salt`` to the first block only, which can isolate
 a whole request but never share part of one. ifabsec adds the block's scope to
 every block hash instead:
