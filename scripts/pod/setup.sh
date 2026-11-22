@@ -79,4 +79,5 @@ open(f"{d}/env", "w").write(
 )
 EOF
 fi
+echo sglang > "$STATE/engine"
 echo "done. Next: python scripts/pod/check.py"

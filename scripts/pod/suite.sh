@@ -9,9 +9,11 @@
 #   USERS        users per org, 4 orgs         (default: 4,16,64 = 16, 64, 256 users)
 #   CONC         sessions in flight            (default: 32)
 #   HF_TOKEN     needed only for gated models, e.g. meta-llama/Llama-3.1-8B-Instruct
+#   ENGINE       sglang (default) or vllm
 #
-# Each step's output lands in .pod/runs/<model>/; .pod/runs/summary.txt collects
-# the PASS/FAIL lines and every table. A failing step doesn't stop the others.
+# Each step's output lands in .pod/runs/<model>/ (.pod/runs-vllm/ for vLLM);
+# summary.txt there collects the PASS/FAIL lines and every table. A failing
+# step doesn't stop the others.
 set -u
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -19,10 +21,15 @@ MODELS="${MODELS:-Qwen/Qwen3-8B microsoft/Phi-4-mini-instruct}"
 BENCH_MODEL="${BENCH_MODEL:-Qwen/Qwen3-8B}"
 USERS="${USERS:-4,16,64}"
 CONC="${CONC:-32}"
-RUNS="$REPO/.pod/runs"
+ENGINE="${ENGINE:-sglang}"
+case "$ENGINE" in
+  sglang) SETUP=scripts/pod/setup.sh; RUNS="$REPO/.pod/runs" ;;
+  vllm)   SETUP=scripts/pod/setup-vllm.sh; RUNS="$REPO/.pod/runs-vllm" ;;
+  *) echo "ENGINE must be sglang or vllm"; exit 2 ;;
+esac
 
 cd "$REPO"
-bash scripts/pod/setup.sh || { echo "setup failed; see above"; exit 1; }
+bash "$SETUP" || { echo "setup failed; see above"; exit 1; }
 mkdir -p "$RUNS"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader > "$RUNS/gpu.txt"
 
@@ -36,7 +43,7 @@ for model in $MODELS; do
   echo "== $model: attacks"
   python attack/run_pod.py --model "$model" 2>&1 | tee "$out/attack.txt"
   cp .pod/attack.json "$out/" 2>/dev/null
-  grep -h -m1 -E "max_total_num_tokens" .pod/server-attack-stock.log > "$out/kv-cache.txt" 2>/dev/null
+  grep -h -m1 -E "max_total_num_tokens|GPU KV cache size" .pod/server-attack-stock.log > "$out/kv-cache.txt" 2>/dev/null
 done
 
 tag="${BENCH_MODEL//\//_}"
@@ -46,14 +53,15 @@ python bench/latency.py --model "$BENCH_MODEL" --users "$USERS" --concurrency "$
 cp .pod/latency.json "$RUNS/$tag/" 2>/dev/null
 
 {
-  echo "GPU: $(cat "$RUNS/gpu.txt")"
+  echo "GPU: $(cat "$RUNS/gpu.txt")   engine: $ENGINE"
   for model in $MODELS; do
     tag="${model//\//_}"
     echo
     echo "=== $model"
-    echo "KV cache: $(sed -E 's/.*(max_total_num_tokens=[0-9]+).*/\1/' "$RUNS/$tag/kv-cache.txt" 2>/dev/null)"
+    echo "KV cache: $(sed -E 's/.*(max_total_num_tokens=[0-9]+|GPU KV cache size: [0-9,]+ tokens).*/\1/' "$RUNS/$tag/kv-cache.txt" 2>/dev/null)"
     grep -E "^\[(PASS|FAIL|SKIP)\]" "$RUNS/$tag/check.txt"
-    sed -n '/stock     labels    chance/,/^extract/p' "$RUNS/$tag/attack.txt"
+    sed -n '/stock     labels    chance/,/^extract, digits/p' "$RUNS/$tag/attack.txt"
+    grep -E "^extract in digit groups" "$RUNS/$tag/attack.txt"
     grep -E "skipping digit" "$RUNS/$tag/attack.txt"
   done
   echo

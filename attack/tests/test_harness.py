@@ -55,6 +55,21 @@ def test_extract_attack(enforce):
         assert r["mean_digits_recovered"] == 0 and r["full_recovery_rate"] == 0
 
 
+@pytest.mark.parametrize("enforce", [False, True])
+def test_block_granular_cache(enforce):
+    """With whole-block reporting (vLLM), single-digit probes mostly see nothing,
+    but guessing digits in groups still recovers the number on stock behavior."""
+    server = FakeServer(enforce, KEYS, INTERNAL, block=3)
+    single = harness.extract_attack(server, "m", minter, digits=6, trials=4)
+    grouped = harness.extract_blocks_attack(server, "m", minter, digits=6, trials=4, max_group=3)
+    assert grouped["cache_flushed_between_trials"]
+    if not enforce:
+        assert single["full_recovery_rate"] < 1.0
+        assert grouped["full_recovery_rate"] == 1.0 and grouped["mean_probes"] > 60
+    else:
+        assert grouped["mean_digits_recovered"] == 0 and grouped["full_recovery_rate"] == 0
+
+
 def test_org_prompt_still_shared_under_enforcement():
     """The defense isn't 'cache nothing': Eve still hits the shared org prompt."""
     server = FakeServer(True, KEYS, INTERNAL)

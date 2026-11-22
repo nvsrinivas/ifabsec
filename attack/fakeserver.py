@@ -25,11 +25,13 @@ class CharTokenizer:
 
 
 class FakeServer:
-    """enforce=False behaves like stock SGLang; enforce=True like the patch."""
+    """enforce=False behaves like stock SGLang; enforce=True like the patch.
+    block > 1 reports cached tokens in whole blocks, as vLLM does."""
 
     def __init__(self, enforce: bool, gateway_keys: dict, internal_key: bytes, audience: str = "pod-1",
-                 base_ms: float = 8.0, per_token_ms: float = 0.05, noise_ms: float = 1.0, seed: int = 0):
-        self.enforce = enforce
+                 base_ms: float = 8.0, per_token_ms: float = 0.05, noise_ms: float = 1.0, seed: int = 0,
+                 block: int = 1):
+        self.enforce, self.block = enforce, block
         cfg = g.Config(True, audience, gateway_keys, internal_key) if enforce else g.Config(False)
         g._reset_for_tests(cfg, Verifier(audience, gateway_keys))
         self.cache, self.tok = PrefixCache(), CharTokenizer()
@@ -46,6 +48,7 @@ class FakeServer:
         key_ids, key_salt = g.scoped_key(req, ids)
         keys = [((None, key_salt), t) for t in key_ids]
         cached = min(self.cache.match_prefix(keys), max(len(ids) - 1, 0))  # always compute the last token
+        cached -= cached % self.block
         out_ids, out_salt = g.scoped_key(req, list(ids) + [0])  # insert prompt + one output token
         self.cache.insert([((None, out_salt), t) for t in out_ids])
         latency = self.base + self.per_tok * (len(ids) - cached) + abs(self.rng.gauss(0, self.noise))
