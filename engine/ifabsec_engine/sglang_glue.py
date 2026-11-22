@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 from .scope import ScopeError, parse_scope
-from .token import ContentMismatch, TokenError, Verifier, check_messages
+from .token import ContentMismatch, TokenError, Verifier, check_messages, check_tools
 
 log = logging.getLogger("ifabsec")
 
@@ -224,7 +224,7 @@ def _prefix_ids(tok, i: int, end: int, render_prefix, tokenize) -> list[int]:
     those digests, so it is cached (an org's system prompt is rendered once).
     The caller still checks the ids against the request's own prompt."""
     digests = tuple(seg.content_sha256 for seg in tok.segments[: i + 1])
-    key = (end, digests) if all(digests) else None
+    key = (end, digests, tok.claims.get("tools_sha256")) if all(digests) else None
     if key is not None:
         with _prefix_lock:
             hit = _prefix_cache.get(key)
@@ -246,19 +246,28 @@ def label_request(
     token_header: Optional[str],
     raw_messages: Sequence[Any],
     input_ids: Sequence[int],
-    render_prefix: Callable[[int], str],
+    render_prefix: Callable[..., str],
     tokenize: Callable[[str], list[int]],
+    tools: Optional[Sequence[Mapping]] = None,
+    render_tools: Optional[Sequence[Mapping]] = None,
 ) -> str:
     """Ingress. Returns the internal cache salt, or raises TokenError.
 
     render_prefix(k) renders messages[:k] with the chat template (no generation
-    prompt). A segment boundary is the number of leading tokens that render
-    shares with input_ids, so only tokens of the approved render are shared.
-    If that leaves no tokens for a segment, the whole request falls back to
-    its most private scope.
+    prompt); render_prefix(k, tools) also renders the given tools. A segment
+    boundary is the number of leading tokens that render shares with
+    input_ids, so only tokens of the approved render are shared. If that
+    leaves no tokens for a segment, the whole request falls back to its most
+    private scope.
+
+    tools is the request's tools list (what the gateway hashed); render_tools
+    is the subset the server renders into the prompt (None when it renders
+    none). Tools are rendered into the approved prefix only when the token
+    approves them by tools_sha256.
     """
     with _timed("ingress"):
-        return _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefix, tokenize)
+        return _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefix, tokenize,
+                              tools, render_tools)
 
 
 # A render of a partial chat may end in a few tokens the full prompt doesn't
@@ -277,13 +286,17 @@ def _common_prefix_len(a: Sequence[int], b: Sequence[int]) -> int:
     return n
 
 
-def _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefix, tokenize) -> str:
+def _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefix, tokenize,
+                   tools=None, render_tools=None) -> str:
     if not token_header:
         raise TokenError("missing X-Ifab-Token")
     with _timed("ingress.verify"):
         tok = ver.verify(token_header)
         msgs = digest_messages(raw_messages)
         _check_text_messages(tok, msgs)
+        if render_tools and check_tools(tok, tools):
+            plain = render_prefix
+            render_prefix = lambda k: plain(k, render_tools)  # noqa: E731  approved tools join the shared render
 
     most_private = str(tok.effective[-1])
     runs: list = []

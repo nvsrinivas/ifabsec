@@ -14,7 +14,9 @@ from .token import (
     Verifier,
     VerifiedToken,
     check_messages,
+    check_tools,
     segment_digest,
+    tools_digest,
 )
 
 __all__ = [
@@ -31,10 +33,12 @@ __all__ = [
     "Verifier",
     "VerifiedToken",
     "check_messages",
+    "check_tools",
     "narrow",
     "page_align",
     "parse_scope",
     "scoped_keys",
     "segment_digest",
+    "tools_digest",
     "token_scopes",
 ]

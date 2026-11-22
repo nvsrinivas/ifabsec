@@ -60,6 +60,23 @@ tunnel), and the engine accepts requests only from gateway identities.
 | `jti` | Random nonce, at least 16 bytes before encoding. Single use. |
 | `read` | Scopes this request is authorized to use. Every segment scope must be in this set. |
 | `segments` | Which messages of the request belong to which scope, in order. |
+| `tools_sha256` | Optional. Approves the request's tool schemas (see below). |
+
+### Tools
+
+Chat templates usually render the request's `tools` inside the system turn, so
+tool schemas are part of the prompt's opening. They are shared only if the
+token approves them: `tools_sha256` is the SHA-256 of the canonical JSON of the
+tools list, each tool reduced to `type` (default `function`) and the function's
+`name`, `description` and `parameters`, with null fields dropped. Canonical
+JSON here means sorted keys, no spaces, UTF-8 without escaping. Go
+(`token.ToolsDigest`) and Python (`tools_digest`) both check
+`testdata/tools_vector_v1.json`.
+
+With `tools_sha256`, the engine renders the approved prefix with the tools, so
+the schemas share the first segment's scope. Without it, the approved render has
+no tools and the shared run ends where the tool text begins. A request whose
+tools differ from an approved hash is rejected.
 
 ### Segments
 
@@ -139,6 +156,8 @@ Reject the request unless all of these hold:
     names an org belongs to that set. One leaked key then exposes only its own
     orgs. A `kid` with no limit may mint for any org (a single gateway serving
     every org).
+11. If `tools_sha256` is present and the request renders tools, their digest
+    matches it.
 
 Step 10 is engine configuration: `IFAB_GATEWAY_KEYS=kid:hex[:org1|org2],...`.
 The Python engine implements it; the Go library does not need to. Steps 1–8 are implemented identically in `gateway/token` (Go) and

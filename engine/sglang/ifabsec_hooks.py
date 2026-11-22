@@ -56,9 +56,19 @@ def label_chat(serving, request, raw_request, adapted_request):
         for m in request.messages
     ]
 
-    def render_prefix(k: int) -> str:
+    # The tools SGLang renders into the prompt (serving_chat: model_dump of
+    # request.tools, filtered to the named function for a specific tool_choice).
+    tools = [t.model_dump() for t in (getattr(request, "tools", None) or [])] or None
+    choice = getattr(request, "tool_choice", None)
+    render_tools = tools
+    if tools and choice == "none":
+        render_tools = None
+    elif tools and choice is not None and not isinstance(choice, str):
+        render_tools = [t for t in tools if t["function"]["name"] == choice.function.name] or None
+
+    def render_prefix(k: int, with_tools=None) -> str:
         return tokenizer.apply_chat_template(
-            messages[:k], tokenize=False, add_generation_prompt=False
+            messages[:k], tools=with_tools, tokenize=False, add_generation_prompt=False
         )
 
     def tokenize(text: str) -> list:
@@ -67,7 +77,8 @@ def label_chat(serving, request, raw_request, adapted_request):
     header = raw_request.headers.get("x-ifab-token") if raw_request is not None else None
     try:
         salt = glue.label_request(
-            glue.config(), glue.verifier(), header, messages, input_ids, render_prefix, tokenize
+            glue.config(), glue.verifier(), header, messages, input_ids, render_prefix, tokenize,
+            tools=tools, render_tools=render_tools,
         )
     except glue.TokenError as e:
         raise ValueError(f"ifabsec: {e}") from e

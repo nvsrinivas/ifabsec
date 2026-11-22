@@ -80,6 +80,30 @@ def segment_digest(messages: Iterable[Mapping[str, str]]) -> str:
     return h.hexdigest()
 
 
+def _is_sha256_hex(s) -> bool:
+    return isinstance(s, str) and len(s) == 64 and all(ch in "0123456789abcdef" for ch in s)
+
+
+def tools_digest(tools: Iterable[Mapping]) -> str:
+    """tools_sha256 for a request's tools list.
+
+    Canonical JSON (sorted keys, no spaces, UTF-8) of each tool reduced to what
+    chat templates render: type, and the function's name, description and
+    parameters (absent or null fields dropped). The gateway hashes the tools the
+    client sent; the engine hashes the tools SGLang parsed. Both must normalize
+    the same way.
+    """
+    norm = []
+    for t in tools:
+        f = t.get("function") or {}
+        norm.append({
+            "type": t.get("type") or "function",
+            "function": {k: f[k] for k in ("name", "description", "parameters") if f.get(k) is not None},
+        })
+    blob = json.dumps(norm, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
 @dataclass(frozen=True)
 class Segment:
     until_message: int | None
@@ -116,6 +140,8 @@ def _check_claims(c: dict) -> tuple[tuple[Segment, ...], tuple[Scope, ...]]:
         raise FormatError(f"lifetime must be 1..{MAX_LIFETIME} s")
     if len(_b64decode(c.get("jti", ""))) < MIN_JTI_BYTES:
         raise FormatError(f"jti must be >= {MIN_JTI_BYTES} bytes")
+    if "tools_sha256" in c and not _is_sha256_hex(c["tools_sha256"]):
+        raise FormatError("tools_sha256 must be 64 lowercase hex characters")
     read_raw = c.get("read")
     if not isinstance(read_raw, list):
         raise FormatError("read must be a list")
@@ -226,6 +252,19 @@ class Verifier:
                 raise ReplayError("token replayed")
             self._seen[jti] = until
             heapq.heappush(self._expiry, (until, jti))
+
+
+def check_tools(tok: VerifiedToken, tools: Optional[Sequence[Mapping]]) -> bool:
+    """Check 11: tools approved by the token. Returns True when the request's
+    tools match tools_sha256, so they may be rendered into the shared prefix.
+    Returns False when the token approves no tools or the request renders none
+    (the tools then fall in the user's scope, or the request is isolated)."""
+    want = tok.claims.get("tools_sha256")
+    if want is None or not tools:
+        return False
+    if not hmac.compare_digest(tools_digest(tools), want):
+        raise ContentMismatch("tools do not match the token")
+    return True
 
 
 def check_messages(tok: VerifiedToken, messages: Sequence[Mapping[str, str]]) -> None:

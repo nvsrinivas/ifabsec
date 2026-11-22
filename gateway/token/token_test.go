@@ -243,3 +243,23 @@ func TestUserScopesAreNamespacedByOrg(t *testing.T) {
 		t.Fatal("narrowing across orgs must fail")
 	}
 }
+
+// toolsVector is shared with engine/tests so the Go and Python tools digests
+// cannot drift (HTML characters, non-ASCII text, missing type, null fields).
+func TestToolsDigestMatchesPython(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "tools_vector_v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Tools       []map[string]any `json:"tools"`
+		ToolsSHA256 string           `json:"tools_sha256"`
+	}
+	if err := json.Unmarshal(b, &v); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ToolsDigest(v.Tools)
+	if err != nil || got != v.ToolsSHA256 {
+		t.Fatalf("ToolsDigest = %s, %v; want %s", got, err, v.ToolsSHA256)
+	}
+}

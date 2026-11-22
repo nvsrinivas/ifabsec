@@ -15,7 +15,7 @@ from typing import Optional, Sequence
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from .token import segment_digest
+from .token import segment_digest, tools_digest
 
 
 def _b64(b: bytes) -> str:
@@ -40,6 +40,7 @@ def chat_token(
     org: str,
     shared_messages: Sequence[dict],
     now: Optional[int] = None,
+    tools: Optional[Sequence[dict]] = None,
 ) -> str:
     """Token for the common shape: the first len(shared_messages) messages are
     the org's approved prompt, everything after belongs to the user."""
@@ -51,8 +52,11 @@ def chat_token(
             "scope": f"org:{org}",
             "content_sha256": segment_digest(shared_messages),
         })
-    return mint(seed, {
+    claims = {
         "v": 1, "iss": "dev", "kid": kid, "sub": f"user:{org}/{user}", "aud": aud,
         "iat": now, "exp": now + 60, "jti": _b64(os.urandom(16)),
         "read": [f"org:{org}", f"user:{org}/{user}"], "segments": segments,
-    })
+    }
+    if tools:
+        claims["tools_sha256"] = tools_digest(tools)  # the org's approved tool schemas
+    return mint(seed, claims)
