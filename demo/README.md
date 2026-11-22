@@ -4,6 +4,11 @@ A one-command demo on a real GPU. Someone in the audience types any account
 number. Alice sends it to a shared SGLang server, Eve reads it back from the
 cached-token counts, and then the same attack fails once labels are on.
 
+![Recording of the demo on an A100](../docs/demo/demo.gif)
+
+The recording is [`docs/demo/demo.cast`](../docs/demo/demo.cast) (play it with
+`asciinema play`); the GIF above is rendered from it.
+
 ## A real run
 
 On an A100 with Qwen3-8B (2026-11-21): on stock SGLang the audience typed a
