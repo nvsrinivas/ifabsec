@@ -124,7 +124,7 @@ that test fail, which is the leak.
 
 ## Author
 
-Srinivas N. Veereshwara. Built with AI assistance (Claude); every result in `docs/results/` comes from runs on real GPUs, with raw data alongside.
+Srinivas N. Veereshwara. Design, direction and verification by the author, with much of the code written with AI assistance (Claude); every result in `docs/results/` comes from runs on real GPUs, with raw data alongside.
 
 ## License
 
