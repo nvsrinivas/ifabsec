@@ -17,9 +17,9 @@ enforces it there:
 
 ```
 client or agent
-  → zero-trust tunnel (WireGuard): verified identity
+  → zero-trust layer: verified identity
   → policy gateway (Go): decides scopes, mints a signed label token
-  → inference engine (SGLang fork): verifies the token, enforces scopes
+  → inference engine (SGLang + ifabsec patch): verifies the token, enforces scopes
   → GPU
 ```
 
@@ -58,8 +58,7 @@ content**. The v0.1 benchmark exists to measure exactly that.
 | `sim/` | Hit-rate simulation: stock vs per-org vs per-user isolation vs labels | Runs in seconds |
 | `testdata/token_vector_v1.json` | A Go-minted token both test suites check, so the implementations can't drift | — |
 
-Not here yet: the gateway service that turns tunnel identity into tokens, and a
-port to other engines. See the roadmap.
+Limits and next steps are in the [white paper](docs/whitepaper.md#threat-model-and-limits).
 
 White paper: [`docs/whitepaper.md`](docs/whitepaper.md) (design, threat model, results, related work).
 Magazine-style article: [`docs/story.md`](docs/story.md).
@@ -100,16 +99,6 @@ No GPU is needed. The engine tests include a randomized noninterference check:
 one user's cache hits are identical whether or not other users (in the same org
 or another org) sent private text. Removing scopes from the cache keys makes
 that test fail, which is the leak.
-
-## Roadmap
-
-| Version | Adds | Shows |
-|---|---|---|
-| **v0.1** | SGLang radix cache keyed by `(scope, token)`; token check at ingress; cached-token counts scoped by the keys; timing attack; baselines: stock and per-request salt | The leak, the fix, and the hits recovered vs salting |
-| v0.2 | Per-scope eviction quotas | Eviction-pressure probing is closed |
-| v0.3 | Gateway in front of the WireGuard ZTNA layer, end to end | Identity issued at the network edge, enforced in the engine |
-| v0.4 | Two nodes behind a cache-aware router with label-aware routing | The routing channel and its fix |
-| later | vLLM port; Dynamo/router-level enforcement | Engine-independent enforcement |
 
 ## Ground rules
 
