@@ -21,6 +21,8 @@ Eve wants that number. She has no access to Alice's session or the server's logs
 
 The attack has one real prerequisite: Eve must know how Alice's message begins. That holds for forms, templates and agent prompts, where messages follow a fixed shape. It holds much less for free-form chat. Eve also has to probe while Alice's entry is still cached; how long that lasts depends on cache size and load. Everything below ran on real hardware: an NVIDIA A100 serving Qwen3-8B on SGLang, attacked only on a server set up for the test, with synthetic users.
 
+An account number is just the easiest thing to show. The same works for anything in a prompt with a guessable shape: a customer ID, a diagnosis code from a short list, a name from a staff directory, a figure in a templated report.
+
 ## Reading a number one digit at a time
 
 Qwen's tokenizer splits numbers into single digits, so each digit of Alice's account is its own token. Eve sends ten requests that stop one token into the secret: *My account number is 0* through *My account number is 9*. Nine report the same cached-token count, covering the shared instructions and the opening of the sentence. One reports exactly one more, because that digit extends a prefix Alice already put in the cache.
