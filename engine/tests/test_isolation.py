@@ -30,12 +30,12 @@ class Tenant:
         msgs = [self.system, {"role": "user", "content": user_text}]
         Tenant._n += 1
         tok = verifier.verify(mint({
-            "v": 1, "iss": "gw-1", "kid": "gw-key-1", "sub": f"user:{self.user}", "aud": "cluster-1",
+            "v": 1, "iss": "gw-1", "kid": "gw-key-1", "sub": f"user:{self.org}/{self.user}", "aud": "cluster-1",
             "iat": T0, "exp": T0 + 60, "jti": b64(Tenant._n.to_bytes(16, "big")),
-            "read": [f"org:{self.org}", f"user:{self.user}"],
+            "read": [f"org:{self.org}", f"user:{self.org}/{self.user}"],
             "segments": [
                 {"until_message": 1, "scope": f"org:{self.org}", "content_sha256": segment_digest(msgs[:1])},
-                {"scope": f"user:{self.user}"},
+                {"scope": f"user:{self.org}/{self.user}"},
             ],
         }))
         check_messages(tok, msgs)

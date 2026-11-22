@@ -41,13 +41,13 @@ _n = [1000]
 def token_for(user, org, msgs, system_ok=True):
     _n[0] += 1
     return mint({
-        "v": 1, "iss": "gw-1", "kid": "gw-key-1", "sub": f"user:{user}", "aud": "cluster-1",
+        "v": 1, "iss": "gw-1", "kid": "gw-key-1", "sub": f"user:{org}/{user}", "aud": "cluster-1",
         "iat": T0, "exp": T0 + 60, "jti": b64(_n[0].to_bytes(16, "big")),
-        "read": [f"org:{org}", f"user:{user}"],
+        "read": [f"org:{org}", f"user:{org}/{user}"],
         "segments": [
             {"until_message": 1, "scope": f"org:{org}",
              "content_sha256": segment_digest(msgs[:1] if system_ok else [{"role": "system", "content": "x"}])},
-            {"scope": f"user:{user}"},
+            {"scope": f"user:{org}/{user}"},
         ],
     })
 
@@ -79,20 +79,20 @@ def test_salt_marks_system_prompt_as_org(cfg):
     req, msgs = ingress(cfg, "alice", "acme", "my balance?")
     runs = g.decode_salt(INTERNAL, req.cache_salt, req.origin_input_ids)
     assert runs[0][0] == len(render(msgs[:1]))  # boundary right after the system message
-    assert runs[0][1] == g.scope_id("org:acme") and runs[1] == (None, g.scope_id("user:alice"))
+    assert runs[0][1] == g.scope_id("org:acme") and runs[1] == (None, g.scope_id("user:acme/alice"))
 
 
 def test_unstable_boundary_isolates(cfg):
     req, _ = ingress(cfg, "alice", "acme", "hi", renderer=lambda k: "<|system|>something else")
     runs = g.decode_salt(INTERNAL, req.cache_salt, req.origin_input_ids)
-    assert runs == [(None, g.scope_id("user:alice"))]
+    assert runs == [(None, g.scope_id("user:acme/alice"))]
 
 
 def test_render_failure_isolates(cfg):
     def boom(k):
         raise RuntimeError("template needs a user turn")
     req, _ = ingress(cfg, "alice", "acme", "hi", renderer=boom)
-    assert g.decode_salt(INTERNAL, req.cache_salt, req.origin_input_ids) == [(None, g.scope_id("user:alice"))]
+    assert g.decode_salt(INTERNAL, req.cache_salt, req.origin_input_ids) == [(None, g.scope_id("user:acme/alice"))]
 
 
 def test_ingress_rejections(cfg):
@@ -118,7 +118,7 @@ def test_salt_is_bound_to_key_and_prompt(cfg):
 
 
 def test_pack():
-    sa, sb = g.scope_id("org:acme"), g.scope_id("user:alice")
+    sa, sb = g.scope_id("org:acme"), g.scope_id("user:acme/alice")
     out = g.pack([5, 6, 7, 8], [(2, sa), (None, sb)])
     assert list(out) == [(sa << 20) | 5, (sa << 20) | 6, (sb << 20) | 7, (sb << 20) | 8]
     assert g.pack([1 << 20], [(None, sa)]) is None
@@ -196,7 +196,7 @@ def test_prefix_boundary_cache_still_checks_the_prompt(cfg):
     ids = tokenize("<|system|>tampered" + render(msgs, gen=True))
     salt = g.label_request(cfg, g.verifier(), token_for("carol", "acme", msgs), msgs, ids,
                            counting_render(msgs), tokenize)
-    assert g.decode_salt(INTERNAL, salt, ids) == [(None, g.scope_id("user:carol"))]
+    assert g.decode_salt(INTERNAL, salt, ids) == [(None, g.scope_id("user:acme/carol"))]
 
 
 def test_template_that_closes_partial_chats_still_shares(cfg):

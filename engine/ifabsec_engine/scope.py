@@ -29,15 +29,16 @@ class Scope:
     def is_ancestor_of(self, other: "Scope") -> bool:
         """Everyone in other's audience is in self's audience (equal counts).
 
-        User membership in orgs and teams is asserted by the gateway, so org and
-        team scopes are ancestors of every user scope.
+        Org and team scopes are ancestors only of scopes in the same org. Team
+        membership is asserted by the gateway, so a team scope is an ancestor of
+        every user scope in its org.
         """
         if self == other or self.kind == PUBLIC:
             return True
         if self.kind == ORG:
-            return (other.kind == TEAM and other.org == self.org) or other.kind == USER
+            return other.kind in (TEAM, USER) and other.org == self.org
         if self.kind == TEAM:
-            return other.kind == USER
+            return other.kind == USER and other.org == self.org
         return False
 
     def __str__(self) -> str:
@@ -47,7 +48,7 @@ class Scope:
             return f"org:{self.org}"
         if self.kind == TEAM:
             return f"team:{self.org}/{self.team}"
-        return f"user:{self.user}"
+        return f"user:{self.org}/{self.user}"
 
 
 def _ident(s: str, what: str, full: str) -> str:
@@ -70,7 +71,10 @@ def parse_scope(s: str) -> Scope:
             raise ScopeError(f"scope {s!r}: want team:<org>/<team>")
         return Scope(TEAM, org=_ident(org, "org", s), team=_ident(team, "team", s))
     if kind == "user":
-        return Scope(USER, user=_ident(rest, "user", s))
+        org, sep, user = rest.partition("/")
+        if not sep:
+            raise ScopeError(f"scope {s!r}: want user:<org>/<id>")
+        return Scope(USER, org=_ident(org, "org", s), user=_ident(user, "user", s))
     raise ScopeError(f"scope {s!r}: unknown kind {kind!r}")
 
 
