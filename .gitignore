@@ -13,5 +13,5 @@ __pycache__/
 # pod state: dev keys, logs, results
 /.pod/
 
-# generated docs (scripts/story_pdf.py)
+# generated docs (scripts/docs_pdf.py)
 /build/

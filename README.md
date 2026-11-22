@@ -61,7 +61,7 @@ content**. The v0.1 benchmark exists to measure exactly that.
 Limits and next steps are in the [white paper](docs/whitepaper.md#threat-model-and-limits).
 
 White paper: [`docs/whitepaper.md`](docs/whitepaper.md) (design, threat model, results, related work).
-Magazine-style article: [`docs/story.md`](docs/story.md). PDF: [story.pdf](https://github.com/nvsrinivas/ifabsec/releases/download/story-latest/story.pdf), rebuilt automatically on every change (or locally with `python3 scripts/story_pdf.py`, which needs pandoc and Chrome).
+Magazine-style article: [`docs/story.md`](docs/story.md). PDFs: [story](https://github.com/nvsrinivas/ifabsec/releases/download/docs-latest/story.pdf) and [white paper](https://github.com/nvsrinivas/ifabsec/releases/download/docs-latest/whitepaper.pdf), rebuilt automatically on every change (or locally with `python3 scripts/docs_pdf.py`, which needs pandoc and Chrome).
 
 ## Results so far
 

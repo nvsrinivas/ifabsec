@@ -1,6 +1,6 @@
 # Sharing an AI server without sharing your prompts
 
-November 21, 2026 · a companion to the [white paper](whitepaper.md)
+November 21, 2026 · a companion to the [white paper](whitepaper.md) · [code and data](https://github.com/nvsrinivas/ifabsec)
 
 Someone typed 549876 at a hidden prompt. The number never appeared on screen. It went to one program only, playing an employee named Alice, who asked her company's AI assistant about her account. A second program, playing her colleague Eve, was given nothing but the server's address. About a second and a half later, Eve's program printed 549876.
 
@@ -114,4 +114,4 @@ The companion [white paper](whitepaper.md), *ifabsec: zero trust inside the infe
 
 *About the author.* Srinivas N. Veereshwara. Carrying zero trust from the network edge into AI inference.
 
-*AI use.* This article was written with AI assistance (Claude), and the project was built and run by the author with AI assistance. All experiments ran on rented NVIDIA A100 and RTX 4090 GPUs; the code, raw results and demo recording are in the repository.
+*AI use.* This article was written with AI assistance (Claude), and the project was built and run by the author with AI assistance. All experiments ran on rented NVIDIA A100 and RTX 4090 GPUs; the code, raw results and demo recording are in the [repository](https://github.com/nvsrinivas/ifabsec).
