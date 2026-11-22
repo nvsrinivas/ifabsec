@@ -1,9 +1,10 @@
 name: story-pdf
 
 # Builds docs/story.md into a PDF whenever the story or its figures change.
-# The PDF is attached to the workflow run as the "story-pdf" artifact
-# (Actions tab -> latest story-pdf run -> Artifacts), so it is never stale
-# and no binary is committed to the repo.
+# On main, the PDF is published to the "story-latest" release at a fixed URL:
+#   https://github.com/nvsrinivas/ifabsec/releases/download/story-latest/story.pdf
+# On pull requests it is attached to the run as the "story-pdf" artifact.
+# No binary is committed to the repo.
 
 on:
   push:
@@ -46,3 +47,26 @@ jobs:
           name: story-pdf
           path: build/story.pdf
           retention-days: 90
+
+  release:
+    # Publish the PDF from main to a fixed release URL.
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: story-pdf
+      - name: Update the story-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete story-latest --cleanup-tag --yes || true
+          gh release create story-latest story.pdf \
+            --target "$GITHUB_SHA" \
+            --title "Story PDF (latest)" \
+            --notes "Built automatically from docs/story.md at ${GITHUB_SHA::7}. Rebuilt on every change to the story or its figures." \
+            --latest=false
