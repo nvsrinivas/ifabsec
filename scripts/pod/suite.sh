@@ -30,6 +30,11 @@ esac
 
 cd "$REPO"
 bash "$SETUP" || { echo "setup failed; see above"; exit 1; }
+# vLLM lives in its own environment; run every step with its python.
+if [ "$ENGINE" = vllm ]; then
+  PATH="$(dirname "$(cat .pod/python)"):$PATH"
+  export PATH
+fi
 mkdir -p "$RUNS"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader > "$RUNS/gpu.txt"
 

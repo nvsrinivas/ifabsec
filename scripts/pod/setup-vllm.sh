@@ -3,10 +3,12 @@
 #
 #   bash scripts/pod/setup-vllm.sh
 #
-# Best on the official vLLM image at the pinned version
-# (vllm/vllm-openai:v0.34.0), which already has vLLM, CUDA and torch. On any
-# other image it pip-installs the pinned release. The patch is applied to the
-# installed package; after this, every pod script uses vLLM (.pod/engine).
+# vLLM goes into its own virtual environment (default /opt/ifab-vllm, or
+# IFAB_VENV), created with uv, so it never mixes with the image's torch:
+# installing vLLM's torch over an image's older copy leaves stale files behind,
+# and torch then fails at startup ("duplicate template name"). The patch is
+# applied to that environment; after this, every pod script uses vLLM
+# (.pod/engine) through that environment's python (.pod/python).
 # Run scripts/pod/setup.sh to switch the pod back to SGLang.
 set -euo pipefail
 
@@ -19,32 +21,24 @@ mkdir -p "$STATE"
 echo "== GPU"
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
 
-pip_install() {
-  local log="$STATE/pip-first-attempt.log"
-  if ! pip install -q "$@" 2>"$log"; then
-    echo "first attempt hit a distro-installed package; retrying with --ignore-installed (expected)"
-    if ! pip install -q --ignore-installed "$@"; then
-      echo "both attempts failed; first attempt's errors:" >&2
-      cat "$log" >&2
-      return 1
-    fi
-  fi
-}
+VENV="${IFAB_VENV:-/opt/ifab-vllm}"
+PY="$VENV/bin/python"
 
-echo "== vLLM $VERSION ($COMMIT)"
-have="$(python -c 'import vllm; print(vllm.__version__)' 2>/dev/null || true)"
+echo "== vLLM $VERSION ($COMMIT) in $VENV"
+command -v uv >/dev/null 2>&1 || pip install -q uv
+[ -x "$PY" ] || uv venv -q --python 3.12 "$VENV"
+have="$("$PY" -c 'import vllm; print(vllm.__version__)' 2>/dev/null || true)"
 if [ "$have" != "${VERSION#v}" ]; then
-  echo "installed: ${have:-none}; installing vllm==${VERSION#v}"
-  pip_install "vllm==${VERSION#v}"
+  echo "installing vllm==${VERSION#v} (a few minutes)"
+  uv pip install -q --python "$PY" "vllm==${VERSION#v}"
 fi
-SITE="$(python -c 'import os, vllm; print(os.path.dirname(os.path.dirname(vllm.__file__)))')"
+SITE="$("$PY" -c 'import os, vllm; print(os.path.dirname(os.path.dirname(vllm.__file__)))')"
 cd "$SITE"
 if git apply --check -R "$PATCH" 2>/dev/null; then
   echo "patch already applied"
 elif [ -f vllm/ifabsec_hooks.py ]; then
-  # An older version of the patch: undo it from the previous copy, then apply.
   echo "replacing an older ifabsec patch"
-  pip_install --force-reinstall --no-deps "vllm==${VERSION#v}"
+  uv pip install -q --python "$PY" --reinstall --no-deps "vllm==${VERSION#v}"
   git apply "$PATCH"
   echo "patch applied"
 else
@@ -53,12 +47,12 @@ else
 fi
 cd "$REPO"
 
-pip_install -e "$REPO/engine"
-python -c "import vllm, ifabsec_engine.vllm_glue; print('vllm', vllm.__version__)"
+uv pip install -q --python "$PY" -e "$REPO/engine"
+"$PY" -c "import torch, vllm, ifabsec_engine.vllm_glue; print('vllm', vllm.__version__, 'torch', torch.__version__)"
 
 echo "== dev keys (in $STATE, git-ignored)"
 if [ ! -f "$STATE/gw.seed" ]; then
-  python - "$STATE" <<'EOF'
+  "$PY" - "$STATE" <<'EOF'
 import os, sys
 from ifabsec_engine.devmint import public_key
 d = sys.argv[1]
@@ -74,4 +68,5 @@ open(f"{d}/env", "w").write(
 EOF
 fi
 echo vllm > "$STATE/engine"
-echo "done. Next: python scripts/pod/check.py"
+echo "$PY" > "$STATE/python"
+echo "done. Next: source $VENV/bin/activate && python scripts/pod/check.py"
