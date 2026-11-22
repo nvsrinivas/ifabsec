@@ -1,6 +1,6 @@
 # Sharing an AI server without sharing your prompts
 
-November 21, 2026 · a companion to the [white paper](whitepaper.md) · [code and data](https://github.com/nvsrinivas/ifabsec)
+November 22, 2026 · a companion to the [white paper](whitepaper.md) · [code and data](https://github.com/nvsrinivas/ifabsec)
 
 Someone typed 549876 at a hidden prompt. The number never appeared on screen. It went to one program only, playing an employee named Alice, who asked her company's AI assistant about her account. A second program, playing her colleague Eve, was given nothing but the server's address. About a second and a half later, Eve's program printed 549876.
 
@@ -8,7 +8,7 @@ Someone typed 549876 at a hidden prompt. The number never appeared on screen. It
 
 *The run, as recorded on the A100. The typed numbers appear only in the final reveal lines. To reproduce it: `bash scripts/demo.sh` ([details](../demo/README.md)).*
 
-Nothing was hacked. Eve sent 70 ordinary requests and read a figure the server can include in every reply: how many of her prompt's tokens it found already cached. The server was SGLang, a widely used open-source inference server, running Qwen3-8B on an NVIDIA A100 with its standard cache reporting turned on. The weak point is prefix caching, the optimization that makes long prompts affordable on a shared server.
+Nothing was hacked. Eve sent 70 ordinary requests and read a figure the server can include in every reply: how many of her prompt's tokens it found already cached. The server was SGLang, a widely used open-source inference server, running Qwen3-8B on an NVIDIA A100 with its standard cache reporting turned on. The same channel is open on vLLM, the other widely used one. The weak point is prefix caching, the optimization that makes long prompts affordable on a shared server.
 
 This article walks through the attack, why it works, what the usual fix costs, and an alternative from zero-trust networking that keeps both the isolation and the cache. A note on scope: hosted AI services set their own caching policies. The exposure described here is in servers an organization runs for many users and applications.
 
@@ -27,7 +27,7 @@ Qwen's tokenizer splits numbers into single digits, so each digit of Alice's acc
 
 Eve appends the winning digit and repeats. Six rounds of ten requests recover the whole number.
 
-![Real run on an A100: at each of six digits, the right one returns one more cached token; with labels, all ten return 30](img/story-extraction-animated.svg)
+![Real run on an A100 with SGLang: at each of six digits, the right one returns one more cached token; with labels, all ten return 30](img/story-extraction-animated.svg)
 
 Each row is one round. The single highlighted cell in each row is the server confirming one digit of someone else's prompt; read top to bottom, the cells spell 877893.
 
@@ -39,6 +39,8 @@ Without the token count, latency carries the signal when the match is long, beca
 
 The right candidate returned in 31.7 ms; the 19 wrong ones took 63 to 77 ms. The gap is invisible to a person and trivial for a script. Across ten trials on the A100, timing alone picked the right account 90% of the time.
 
+vLLM changes the details, not the outcome. It caches and counts tokens in blocks of 16, so a single guessed digit rarely moves the count, and reading the number out digit by digit failed there. Confirming a guess did not: on the same A100, the cached-token count and timing each picked Alice's account from the 20 candidates in all ten trials.
+
 ## Why the server gives it away
 
 To see why this works, start with what an inference server does. A model on its own is a file of weights. An inference server turns it into a service: it loads the weights onto GPUs, exposes an OpenAI-style API, and batches requests from many users so the hardware stays busy. SGLang and vLLM are the two most widely used open-source examples.
@@ -49,7 +51,7 @@ Prefix caching keeps those KV entries after a request finishes. When a later req
 
 ![Prefix caching across three requests: a later request reuses the shared opening; the same text after a different opening is computed again](img/story-prefix-caching.svg)
 
-The payoff is large wherever requests share a long opening: system prompts, tool schemas for agents, documents many users query, earlier turns of a conversation. Hosted APIs pass the saving on as cheaper cached tokens and report the count in each response's usage block. SGLang reports it too when the operator enables `--enable-cache-report`.
+The payoff is large wherever requests share a long opening: system prompts, tool schemas for agents, documents many users query, earlier turns of a conversation. Hosted APIs pass the saving on as cheaper cached tokens and report the count in each response's usage block. SGLang reports it too when the operator enables `--enable-cache-report`, and vLLM with `--enable-prompt-tokens-details`.
 
 ## The isolation tax
 
@@ -64,14 +66,14 @@ Zero-trust networking already answers who may reach what: every connection is au
 The prototype, ifabsec, carries the decision into the engine. The gateway service itself is still to be built; for now the prototype mints tokens with a small library.
 
 1. **A signed label on every request.** The gateway already knows the user. It attaches a short-lived token signed with Ed25519 that gives each part of the prompt a scope: organization, team or user. Shared segments must match a content hash the organization approved, such as its registered system prompt.
-2. **Verification at the engine's front door.** SGLang's HTTP process checks the signature, expiry and replay, then maps each segment to token positions. A chat request without a valid label is rejected; other endpoints get a private cache namespace and share nothing.
-3. **Scoped cache keys.** Inside the scheduler, each cached token is keyed by (scope, token) rather than by token alone. Identical text under different scopes never matches, so Eve can type Alice's sentence word for word and still miss her cache entry.
+2. **Verification at the engine's front door.** The server's HTTP process checks the signature, expiry and replay, then maps each segment to token positions. A chat request without a valid label is rejected; other endpoints get a private cache namespace and share nothing.
+3. **Scoped cache keys.** Inside the engine, each cached token is keyed by (scope, token) rather than by token alone; vLLM, which caches in 16-token blocks, gets the scope in each block's key. Identical text under different scopes never matches, so Eve can type Alice's sentence word for word and still miss her cache entry.
 
 A token's state depends on everything before it, so scopes can only narrow along a prompt: shared instructions first, private content after. That matches how real prompts are built.
 
 ![Who reuses what after Alice's question: Alice reuses both parts, Eve reuses only the company instructions, someone at another company reuses nothing](img/story-scopes.svg)
 
-The company instructions stay shared across the organization; everything after them belongs to whoever sent it. The change to SGLang itself is 32 lines across five files and a small hook module. The hook calls about 900 lines of ifabsec Python and stays inactive unless the operator switches it on.
+The company instructions stay shared across the organization; everything after them belongs to whoever sent it. The change to SGLang itself is 32 lines across five files and a small hook module; the vLLM version changes about 16 lines in two files. Both hooks call the same ifabsec Python, about 900 lines, and stay inactive unless the operator switches them on.
 
 ## What the labels cost
 
@@ -79,13 +81,21 @@ The same workload ran under three policies: the default shared cache, per-user s
 
 ![One A100 serving 1,024 users: labels match the default shared cache on reuse and throughput; per-user salting halves throughput](img/story-cost.svg)
 
-Labels keep the cache's reuse and about 98% of its throughput. Median time to first token rose by about 25 ms in this run, and by 90 ms in an earlier run with more requests in flight, made before two overhead fixes. Running every check without the scoped keys accounts for about 9 ms; the rest has not been pinned down yet. Against the labeled server, Eve's attacks recovered no digits, and the right guess timed like the wrong ones.
+On SGLang, labels keep the cache's reuse and about 98% of its throughput. Median time to first token rose by about 25 ms in this run, and by 90 ms in an earlier run with more requests in flight, made before two overhead fixes. Running every check without the scoped keys accounts for about 9 ms; the rest has not been pinned down yet.
+
+vLLM, with the same workload on the same A100, tells a similar story at a slightly higher price. Labels kept reuse within a point of the open cache and 92 to 94% of its throughput; per-user salting kept 43 to 63%. Almost all of the extra cost is the checks themselves, about 2.7 ms per request on the single event loop that handles every request in vLLM's API server, rather than the scoped keys. Caching that work per approved prompt is the likely fix.
+
+Against the labeled servers, Eve's attacks recovered no digits, and the right guess timed like the wrong ones.
+
+## Why not just tag the prompt?
+
+A simpler idea: have the gateway write an opaque user tag right after the company instructions. Prompts then diverge at the tag, so the instructions stay shared and everything after them is private, with no engine change at all. On vLLM it kept 96 to 99% of the open cache's throughput, a little more than labels.
+
+It pays in two other ways. The model reads the tag: in the check, the same question grew from 36 to 45 tokens and the 48-token answer changed, where labels left both identical. And the engine trusts whatever text arrives, so anything that can reach it past the gateway can write any tag; with labels, the engine verifies every request. For one team behind one trusted gateway, a tag is a reasonable stopgap. Where several teams or companies share an engine, or answers must not change, it falls short.
 
 ## Beyond a single assistant
 
-The same shape turns up wherever one server answers to many principals that share some text but must not share the rest. An internal AI platform serves many teams and applications from one model; each has its own instructions and tool descriptions, and once the gateway approves them they can be cached once for everyone who uses them. A SaaS vendor's product prompt is common to every customer, while customer data must never cross. Agent fleets with different permissions share base instructions on one server, and a handbook or codebase that many people paste into prompts can be cached once per team.
-
-Further out, inference providers and GPU clouds separate unrelated customers today with coarse per-customer isolation, and finer scopes could recover some sharing inside each customer. Regulated workloads that put customer records in prompts could keep each record with its owner, though that would need checking against each industry's rules, which has not been done yet.
+The same shape turns up wherever one server answers to many principals that share some text but must not share the rest: an internal AI platform serving many teams and their approved instructions and tools, a SaaS product prompt common to every customer, agent fleets with different permissions on shared base instructions, a handbook many people paste in. Further out, inference providers could recover some sharing inside each customer, and regulated workloads could keep each customer record with its owner, though that would need checking against each industry's rules.
 
 The label is not specific to the prefix cache. Routing requests across replicas, and moving KV data between prefill and decode nodes in disaggregated serving, could carry the same scope. Only the cache has been built and measured so far.
 
@@ -95,7 +105,7 @@ This work targets servers you run yourself, and finer boundaries inside one cust
 
 The design moves trust rather than removing it. The gateway is trusted, so a compromised gateway can label anything as shared, and someone still has to decide which prompts are organization-wide. Probing inside a scope remains possible by design: anything stamped for a team is visible to that team. Other channels, such as eviction pressure and delays from batching and queueing, are untouched.
 
-The validation so far is in-house: one engine, two model families, synthetic tenants, and no outside review of the token design.
+The validation so far is in-house: two engines (SGLang and vLLM), two model families on SGLang and one on vLLM, synthetic tenants, and no outside review of the token design.
 
 ## What you can do today
 
