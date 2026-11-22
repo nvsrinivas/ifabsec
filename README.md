@@ -119,8 +119,8 @@ that test fail, which is the leak.
 ## Ground rules
 
 - Attacks run only against servers set up for testing, with synthetic tenants and fake data.
-- Findings in third-party systems are reported to their maintainers before
-  anything is published.
+- Newly found vulnerabilities in third-party systems are reported privately to
+  their maintainers before being published.
 
 ## Author
 
