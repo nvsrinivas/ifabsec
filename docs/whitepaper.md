@@ -1,14 +1,14 @@
 # ifabsec: zero trust inside the inference engine
 
-November 21, 2026 · [code and data](https://github.com/nvsrinivas/ifabsec)
+November 22, 2026 · [code and data](https://github.com/nvsrinivas/ifabsec)
 
-Shared LLM inference servers leak what one tenant sent to another through their prefix cache. Per-tenant isolation fixes the leak only by discarding the cache hits that make sharing worthwhile. ifabsec carries verified identity from a zero-trust network layer into the inference engine and enforces it in the cache keys. The goal is per-user isolation without giving up the shared cache. On an A100 running Qwen3-8B on SGLang, a same-org co-worker recovered a 6-digit account number from stock SGLang in every extraction trial, and nothing with ifabsec. With 1,024 users and 16 requests in flight, ifabsec kept stock's cache hit rate (90.4% vs 90.6%) and about 98% of its throughput, twice that of per-user isolation. Median time to first token rose by 25 ms in that run, and by 90 ms in an earlier, more concurrent run made before two overhead fixes.
+Shared LLM inference servers leak what one tenant sent to another through their prefix cache. Per-tenant isolation fixes the leak only by discarding the cache hits that make sharing worthwhile. ifabsec carries verified identity from a zero-trust network layer into the inference engine and enforces it in the cache keys. The goal is per-user isolation without giving up the shared cache. On an A100 running Qwen3-8B on SGLang, a same-org co-worker recovered a 6-digit account number from stock SGLang in every extraction trial, and nothing with ifabsec. With 1,024 users and 16 requests in flight, ifabsec kept stock's cache hit rate (90.4% vs 90.6%) and about 98% of its throughput, twice that of per-user isolation. Median time to first token rose by 25 ms in that run, and by 90 ms in an earlier, more concurrent run made before two overhead fixes. A port to vLLM, on the same A100, took guessing a user's account from 20 candidates from 100% on stock to chance and kept 92–94% of stock's throughput, against 43–63% for per-user isolation. A simpler alternative, a per-user tag written into the prompt, costs less but changes what the model reads and, in the check, what it answered.
 
 ## Background: prefix caching
 
 Prefix caching reuses the attention state of a prompt's opening tokens across requests, cutting time to first token while computing the same result. Its defining property, that any request can reuse any matching prefix, is also what makes it observable across tenants.
 
-SGLang is an open-source inference engine. It loads a model onto GPUs, serves an OpenAI-compatible API, batches requests from many users continuously, and manages the KV cache in GPU memory. vLLM and TensorRT-LLM fill the same role. ifabsec patches SGLang; the idea applies to any engine with a shared prefix cache.
+SGLang is an open-source inference engine. It loads a model onto GPUs, serves an OpenAI-compatible API, batches requests from many users continuously, and manages the KV cache in GPU memory. vLLM and TensorRT-LLM fill the same role. ifabsec patches SGLang and vLLM, the two most widely used open-source engines; the idea applies to any engine with a shared prefix cache.
 
 - **Two phases.** LLMs generate autoregressively, each token predicted from all tokens before it. Prefill computes the attention keys and values for every prompt token at every layer; this is the KV cache. Decode then generates one token at a time while attending to that cache. For long prompts, prefill dominates time to first token.
 - **Reuse across requests.** A KV cache normally lives only for its request. Prefix caching keeps the entries afterwards and reuses them for any later request whose token sequence starts the same way.
@@ -36,11 +36,11 @@ The gateway decides and the engine enforces, the same split as in zero-trust net
 
 ![ifabsec architecture: the zero-trust edge decides, the SGLang server enforces](img/architecture.svg)
 
-The gateway signs what each part of a prompt may share. Inside SGLang, the HTTP process checks the label once, and the cache keys carry its scope from there on.
+The gateway signs what each part of a prompt may share. Inside the engine, the HTTP process checks the label once, and the cache keys carry its scope from there on.
 
 1. **Identity.** A user or agent is authenticated by the zero-trust layer. In this prototype the gateway is a token library and command-line tool; the service that turns that identity into tokens is future work.
 2. **Label token.** A policy gateway mints a short-lived Ed25519-signed token per request: which scopes the request may read (`public`, `org`, `team`, `user`) and which messages belong to which scope. A shared segment must match a content hash the gateway approved, such as the org's registered system prompt.
-3. **Scoped cache keys.** Inside SGLang, every cached token is keyed by `(scope, token)` instead of `token`. Identical text under different scopes never matches, so a probe cannot form the victim's key. The radix tree itself is unchanged.
+3. **Scoped cache keys.** Inside SGLang, every cached token is keyed by `(scope, token)` instead of `token`. Identical text under different scopes never matches, so a probe cannot form the victim's key. The radix tree itself is unchanged. vLLM caches whole 16-token blocks under chained hashes; there each block's hash carries the scope of its last token, so the block that straddles a boundary is cached as the narrower scope.
 4. **Narrowing.** A token's cached state depends on everything before it, so a scope can only narrow along the prompt: the org's system prompt is shared across the org, and everything after the approved segment is the user's alone.
 5. **Fail closed.** On the chat endpoint, a request with a missing or invalid label, a client-chosen cache salt, or image input is rejected. Other endpoints, and any request whose internal salt does not verify, get a cache space of their own and share nothing.
 
@@ -48,7 +48,7 @@ The gateway signs what each part of a prompt may share. Inside SGLang, the HTTP 
 
 After Alice's request is cached, identical text is not enough to reuse it: Bob in her org reuses only the approved org prompt, and a user in another org reuses nothing.
 
-The change to SGLang itself is small: 32 added lines across 5 files and a 75-line hook module, active when IFAB_MODE is observe or enforce. The hook calls the ifabsec engine package, about 900 lines of Python.
+The change to SGLang itself is small: 32 added lines across 5 files and a 75-line hook module, active when IFAB_MODE is observe or enforce. The vLLM patch changes about 16 lines in two files, plus its own hook module. Both hooks call the same ifabsec engine package, about 900 lines of Python.
 
 ## Threat model and limits
 
@@ -59,12 +59,12 @@ Labels defend against a tenant with ordinary API access who watches response tim
 - **Allowed by design:** anyone inside a scope can still probe that scope. Team-scoped text is visible to the whole team.
 - **Policy, not mechanism:** someone must decide which prompts are org-approved. The token carries that decision; it does not make it.
 - **Replay:** each engine process remembers token IDs until they expire: at most 5 minutes, plus 30 seconds of allowed clock skew. Tokens are bearer credentials, so a captured unused token works until then, and separate processes or replicas each accept it once. The gateway-to-engine hop therefore needs its own protection, such as mTLS or the zero-trust layer itself, which this prototype does not provide yet.
-- **Not covered:** eviction-pressure probing (per-scope quotas planned); timing from batching and queueing; KV transfer between nodes in disaggregated serving; SGLang's other cache backends, which fail closed and lose sharing. Tool schemas passed in the API's tools field are shared only when the token approves them by hash; unapproved schemas stay in the user's scope. The engine also tokenizes the prompt and checks the signature before it can reject a bad label, which gives an attacker some cheap load.
+- **Not covered:** eviction-pressure probing (per-scope quotas planned); timing from batching and queueing; KV transfer between nodes in disaggregated serving; SGLang's other cache backends, which fail closed and lose sharing; on vLLM, multimodal input and the Responses and Anthropic endpoints (isolated) and external KV connectors such as LMCache. Tool schemas passed in the API's tools field are shared only when the token approves them by hash; unapproved schemas stay in the user's scope. The engine also tokenizes the prompt and checks the signature before it can reject a bad label, which gives an attacker some cheap load.
 - **Not yet reviewed:** nobody outside this project has reviewed the token design.
 
 ## Evaluation
 
-Stock SGLang leaked a full account number to a same-org co-worker on both GPUs, and labels closed every channel tested while keeping the org prompt shared. Setup: SGLang `efab9d61` with the ifabsec patch, Qwen3-8B unless noted, synthetic tenants, attacks only against servers set up for the tests. Eve sits in Alice's org, so she legitimately shares the org system prompt.
+Stock SGLang leaked a full account number to a same-org co-worker on both GPUs, and labels closed every channel tested while keeping the org prompt shared. Setup: SGLang `efab9d61` with the ifabsec patch (vLLM in its own section below), Qwen3-8B unless noted, synthetic tenants, attacks only against servers set up for the tests. Eve sits in Alice's org, so she legitimately shares the org system prompt.
 
 ### How the attack works
 
@@ -113,15 +113,35 @@ At the median, labels' first token took 191 ms against stock's 166 ms and per-us
 
 In a simulation of 20 orgs with 50 users each, an agent workload with a 6,000-token system prompt kept a 94.8% hit rate with labels, the same as stock, versus 74.9% with per-user isolation. That workload is favourable: when users paste shared documents the gateway has not approved, labels recover about half of the lost hits.
 
+### vLLM
+
+The port to vLLM v0.34.0 ran on the same A100 with Qwen3-8B and 16-token cache blocks, the finest vLLM offers and so the most an attacker can learn per probe ([results](results/2026-11-22-a100-vllm.md)). All 15 checks pass: identical model input and greedy output; Alice's resend hits 48 of 53 tokens, Bob in her org 16 (the one full block of the 18-token org prompt), and a user in another org 0; tool schemas behave as on SGLang.
+
+| | stock vLLM | labels | chance |
+| --- | --- | --- | --- |
+| Guess from 20 candidates, cached-token channel | 1.0 | 0.0 | 0.05 |
+| Guess from 20 candidates, timing channel | 1.0 | 0.1 | 0.05 |
+| Right-vs-wrong timing gap | 31.0 ms | 0.5 ms | |
+| Digits extracted (of 6) | 0 | 0 | |
+
+Extraction failed on stock vLLM too. vLLM counts cached tokens in whole blocks, so one guessed digit moves the count only when it completes a block. An attacker who guesses up to three digits at once (1,110 probes per trial) still found no block boundary in five trials. Block granularity raises the price of reading out a short secret tenfold per digit guessed together; it does not stop confirming a guess from a list, which worked every time.
+
+Under load (4 orgs, 16 to 256 users in total, two-turn sessions, 32 in flight), labels kept stock's hit rate within 0.6 points and 92–94% of its throughput; per-user salting kept 43–63%. That is more than SGLang's 2%, and observe mode shows where it goes: running every check while keying the cache like stock already costs 4–8%, and scoped keys add 0–3%. The checks take about 2.7 ms per request (1.5 ms finding segment boundaries, 0.6 ms verifying the token) on the single event loop that every request passes through in vLLM's API server; a block-key call takes 14 µs.
+
+### A simpler alternative: a user tag
+
+A gateway can keep most of the sharing with no engine change by writing an opaque per-user tag right after the system prompt, so that prompts diverge at the tag. On vLLM this kept 96–99% of stock throughput, with hit rates matching labels. It has two costs labels avoid. The model reads the tag: in the check, the prompt grew from 36 to 45 tokens and the 48-token greedy output changed, where labels left both identical. And the engine trusts whatever text arrives, so anything that reaches it past the gateway can write any tag. A tag suits one trusted gateway in front of one team; it does not give the engine verified isolation.
+
 ## Deployment
 
 ifabsec is a small patch plus a token library, off by default and switched on per server.
 
+- **vLLM patch:** about 16 changed lines in two files (block-hash extra keys and the chat endpoint) and a hook module, for v0.34.0. The same three modes apply.
 - **SGLang patch:** 32 added lines across 5 files, a 75-line hook module, and the ifabsec engine package (about 900 lines of Python) that the hook calls. With `IFAB_MODE=off` the engine behaves exactly like stock; `observe` runs every check but keys the cache like stock, for measuring; `enforce` turns isolation on.
 - **Inside the engine:** the HTTP process verifies the label once. It hands the scheduler an internal salt, authenticated with a server key and bound to the request's exact input tokens, so the scheduler never parses tokens and a request cannot borrow another's scopes.
 - **Gateway side:** a Go library and command-line tool mint and verify label tokens; Python verifies the same test vectors. The gateway service that turns zero-trust identity into tokens is not built yet.
 - **Configuration:** the server's audience name, the gateway's public keys, each optionally limited to the orgs it may mint for, and an internal key shared by the engine's processes.
-- **Other engines:** vLLM already has a per-request `cache_salt` that seeds its block hashes. A port would apply the same scope-per-segment keying there; it has not been done.
+- **Other engines:** not ported. Any engine that keys its prefix cache by token sequence can take the same scope keys.
 
 ## Related work
 
@@ -135,19 +155,19 @@ Other defenses decide inside the engine what is sensitive; ifabsec takes that de
 | [CacheSolidarity](https://arxiv.org/abs/2603.10726) | Tracks reuse across users, flags suspicious sharing, isolates flagged prefixes | Prevents cross-scope matches up front rather than reacting to suspicious reuse |
 | [CachePrune](https://arxiv.org/abs/2605.23640) | Fine-grained sharing of privacy-irrelevant segments such as system instructions | Same goal; segments marked by a signed gateway policy |
 
-ifabsec appears to be the first to enforce gateway-signed sharing scopes inside a production engine's prefix cache, measured for both leakage and cost on real GPUs. That claim needs a fuller literature check before publication.
+ifabsec appears to be the first to enforce gateway-signed sharing scopes inside production engines' prefix caches, measured for both leakage and cost on real GPUs. That claim needs a fuller literature check before publication.
 
 ## Next steps
 
-The priority is an outside review of the token design. After that comes breadth: other engines, more nodes.
+The priority is an outside review of the token design. After that: lower ingress cost, then more nodes.
 
 1. Outside review of the token format, scope rules and fail-closed paths.
-2. A vLLM port using its existing per-request salt.
+2. Lower ingress cost, which matters most on vLLM: cache boundary renders per approved prompt and move verification off the API server's event loop.
 3. Multiple replicas: label-aware routing, and shared replay state or a policy that relies on short expiry.
 4. Disaggregated serving: scopes carried with KV transfers between prefill and decode nodes.
 5. A gateway service that turns zero-trust identity into label tokens end to end.
 6. Per-scope eviction quotas against eviction-pressure probing.
-7. A proposal to SGLang upstream for gateway-set cache scopes.
+7. Proposals to SGLang and vLLM upstream for gateway-set cache scopes.
 
 ## Author and AI use
 
@@ -162,4 +182,4 @@ This paper was written with AI assistance (Claude), and the prototype was built 
 - Chu et al., [Selective KV-Cache Sharing to Mitigate Timing Side-Channels in LLM Inference](https://arxiv.org/abs/2508.08438) (SafeKV), arXiv 2508.08438.
 - Pennas et al., [CacheSolidarity: Preventing Prefix Caching Side Channels in Multi-tenant LLM Serving Systems](https://arxiv.org/abs/2603.10726), arXiv 2603.10726.
 - Wu et al., [CachePrune: Privacy-Aware and Fine-Grained KV Cache Sharing for Efficient LLM Inference](https://arxiv.org/abs/2605.23640), arXiv 2605.23640.
-- Full setup and raw numbers: [`results/2026-11-21-rtx4090.md`](results/2026-11-21-rtx4090.md), [`results/2026-11-21-a100.md`](results/2026-11-21-a100.md) and [`../sim/README.md`](../sim/README.md).
+- Full setup and raw numbers: [`results/2026-11-21-rtx4090.md`](results/2026-11-21-rtx4090.md), [`results/2026-11-21-a100.md`](results/2026-11-21-a100.md), [`results/2026-11-22-a100-vllm.md`](results/2026-11-22-a100-vllm.md) and [`../sim/README.md`](../sim/README.md).
