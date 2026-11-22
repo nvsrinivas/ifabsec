@@ -1,0 +1,87 @@
+[
+  {
+    "check": "off: chat works",
+    "ok": true,
+    "detail": "status 200"
+  },
+  {
+    "check": "off: the leak exists on stock behavior",
+    "ok": true,
+    "detail": "second sender's cached_tokens=48 of 53"
+  },
+  {
+    "check": "info: user-tag alternative changes the model's input",
+    "ok": null,
+    "detail": "prompt_tokens 45 vs 36; 48-token greedy output differs"
+  },
+  {
+    "check": "enforce: same prompt length and same greedy output as stock",
+    "ok": true,
+    "detail": "prompt_tokens 36 vs 36, 48-token greedy output identical"
+  },
+  {
+    "check": "enforce: labeled chat works",
+    "ok": true,
+    "detail": "status 200 "
+  },
+  {
+    "check": "enforce: model input identical to stock",
+    "ok": true,
+    "detail": "53 vs 53 ids"
+  },
+  {
+    "check": "enforce: Alice re-sends, full hit",
+    "ok": true,
+    "detail": "cached=48 of 53"
+  },
+  {
+    "check": "enforce: Bob, identical text, hits only the org prompt",
+    "ok": true,
+    "detail": "cached=16, org prompt=18, prompt=53"
+  },
+  {
+    "check": "enforce: Eve (other org, same text) hits nothing",
+    "ok": true,
+    "detail": "cached=0"
+  },
+  {
+    "check": "enforce: request without a token is rejected",
+    "ok": true,
+    "detail": "status 400"
+  },
+  {
+    "check": "enforce: client-chosen cache_salt is rejected",
+    "ok": true,
+    "detail": "status 400"
+  },
+  {
+    "check": "enforce: /v1/completions without a token shares nothing",
+    "ok": true,
+    "detail": "status 200, cached=0"
+  },
+  {
+    "check": "enforce: approved tool schemas are shared with the org prompt",
+    "ok": true,
+    "detail": "cached=144, org prompt=18, org prompt + tools=155"
+  },
+  {
+    "check": "enforce: unapproved tool schemas are not shared",
+    "ok": true,
+    "detail": "status 200, cached=0, org prompt=18"
+  },
+  {
+    "check": "enforce: tools that differ from the approved ones are rejected",
+    "ok": true,
+    "detail": "status 400"
+  },
+  {
+    "check": "enforce: overhead",
+    "ok": null,
+    "detail": "median latency 34.5 ms vs 29.5 ms off"
+  },
+  {
+    "check": "enforce: segment boundaries stable for this chat template",
+    "ok": true,
+    "detail": "0 'isolating request' warnings in the server log"
+  }
+]

@@ -1,0 +1,82 @@
+{"policy": "stock", "requests": 32, "hit_rate": 0.8023, "ttft_p50_ms": 249.9, "ttft_p95_ms": 539.3, "latency_p50_ms": 773.3, "requests_per_s": 20.12, "output_tokens_per_s": 643.8, "prefill_tokens": 8293, "users": 16, "round": 1}
+{"policy": "per_user", "requests": 32, "hit_rate": 0.482, "ttft_p50_ms": 170.1, "ttft_p95_ms": 1479.5, "latency_p50_ms": 1212.1, "requests_per_s": 12.53, "output_tokens_per_s": 400.8, "prefill_tokens": 21733, "users": 16, "round": 1}
+{"policy": "tag", "requests": 32, "hit_rate": 0.7962, "ttft_p50_ms": 251.4, "ttft_p95_ms": 523.0, "latency_p50_ms": 770.4, "requests_per_s": 20.07, "output_tokens_per_s": 642.3, "prefill_tokens": 8615, "users": 16, "round": 1}
+{"policy": "stock", "requests": 32, "hit_rate": 0.8023, "ttft_p50_ms": 254.6, "ttft_p95_ms": 530.4, "latency_p50_ms": 768.8, "requests_per_s": 20.21, "output_tokens_per_s": 646.8, "prefill_tokens": 8293, "users": 16, "round": 2}
+{"policy": "per_user", "requests": 32, "hit_rate": 0.482, "ttft_p50_ms": 159.8, "ttft_p95_ms": 1455.5, "latency_p50_ms": 1198.7, "requests_per_s": 12.71, "output_tokens_per_s": 406.7, "prefill_tokens": 21733, "users": 16, "round": 2}
+{"policy": "tag", "requests": 32, "hit_rate": 0.7962, "ttft_p50_ms": 249.5, "ttft_p95_ms": 546.4, "latency_p50_ms": 774.6, "requests_per_s": 19.81, "output_tokens_per_s": 633.9, "prefill_tokens": 8615, "users": 16, "round": 2}
+{"policy": "stock", "requests": 128, "hit_rate": 0.8823, "ttft_p50_ms": 294.2, "ttft_p95_ms": 664.6, "latency_p50_ms": 869.6, "requests_per_s": 34.66, "output_tokens_per_s": 1109.1, "prefill_tokens": 19763, "users": 64, "round": 1}
+{"policy": "per_user", "requests": 128, "hit_rate": 0.4819, "ttft_p50_ms": 212.7, "ttft_p95_ms": 2515.4, "latency_p50_ms": 2142.8, "requests_per_s": 14.81, "output_tokens_per_s": 474.1, "prefill_tokens": 86963, "users": 64, "round": 1}
+{"policy": "tag", "requests": 128, "hit_rate": 0.8759, "ttft_p50_ms": 402.7, "ttft_p95_ms": 691.2, "latency_p50_ms": 937.3, "requests_per_s": 32.24, "output_tokens_per_s": 1031.6, "prefill_tokens": 20981, "users": 64, "round": 1}
+{"policy": "stock", "requests": 128, "hit_rate": 0.8823, "ttft_p50_ms": 408.5, "ttft_p95_ms": 656.3, "latency_p50_ms": 925.6, "requests_per_s": 32.66, "output_tokens_per_s": 1045.1, "prefill_tokens": 19763, "users": 64, "round": 2}
+{"policy": "per_user", "requests": 128, "hit_rate": 0.4819, "ttft_p50_ms": 186.2, "ttft_p95_ms": 2525.9, "latency_p50_ms": 2131.3, "requests_per_s": 14.76, "output_tokens_per_s": 472.4, "prefill_tokens": 86963, "users": 64, "round": 2}
+{"policy": "tag", "requests": 128, "hit_rate": 0.8759, "ttft_p50_ms": 383.6, "ttft_p95_ms": 682.3, "latency_p50_ms": 926.2, "requests_per_s": 32.57, "output_tokens_per_s": 1042.3, "prefill_tokens": 20981, "users": 64, "round": 2}
+{"policy": "stock", "requests": 512, "hit_rate": 0.9023, "ttft_p50_ms": 266.3, "ttft_p95_ms": 455.5, "latency_p50_ms": 921.7, "requests_per_s": 34.42, "output_tokens_per_s": 1101.4, "prefill_tokens": 65589, "users": 256, "round": 1}
+{"policy": "per_user", "requests": 512, "hit_rate": 0.4819, "ttft_p50_ms": 208.6, "ttft_p95_ms": 1641.5, "latency_p50_ms": 2155.3, "requests_per_s": 14.84, "output_tokens_per_s": 474.9, "prefill_tokens": 347829, "users": 256, "round": 1}
+{"policy": "tag", "requests": 512, "hit_rate": 0.8957, "ttft_p50_ms": 393.4, "ttft_p95_ms": 485.1, "latency_p50_ms": 943.5, "requests_per_s": 33.24, "output_tokens_per_s": 1063.7, "prefill_tokens": 70513, "users": 256, "round": 1}
+{"policy": "stock", "requests": 512, "hit_rate": 0.9023, "ttft_p50_ms": 398.2, "ttft_p95_ms": 465.4, "latency_p50_ms": 920.9, "requests_per_s": 34.09, "output_tokens_per_s": 1090.9, "prefill_tokens": 65589, "users": 256, "round": 2}
+{"policy": "per_user", "requests": 512, "hit_rate": 0.4819, "ttft_p50_ms": 184.8, "ttft_p95_ms": 1096.1, "latency_p50_ms": 2153.7, "requests_per_s": 14.81, "output_tokens_per_s": 473.9, "prefill_tokens": 347829, "users": 256, "round": 2}
+{"policy": "tag", "requests": 512, "hit_rate": 0.8957, "ttft_p50_ms": 287.1, "ttft_p95_ms": 486.7, "latency_p50_ms": 955.7, "requests_per_s": 33.24, "output_tokens_per_s": 1063.6, "prefill_tokens": 70513, "users": 256, "round": 2}
+{"policy": "labels", "requests": 32, "hit_rate": 0.7978, "ttft_p50_ms": 310.9, "ttft_p95_ms": 620.6, "latency_p50_ms": 836.3, "requests_per_s": 18.64, "output_tokens_per_s": 596.5, "prefill_tokens": 8485, "users": 16, "round": 1}
+{"policy": "labels_shared", "requests": 32, "hit_rate": 0.7901, "ttft_p50_ms": 305.4, "ttft_p95_ms": 598.7, "latency_p50_ms": 828.1, "requests_per_s": 18.64, "output_tokens_per_s": 596.5, "prefill_tokens": 8805, "users": 16, "round": 1}
+{"policy": "labels", "requests": 32, "hit_rate": 0.7978, "ttft_p50_ms": 304.1, "ttft_p95_ms": 579.6, "latency_p50_ms": 820.6, "requests_per_s": 19.1, "output_tokens_per_s": 611.3, "prefill_tokens": 8485, "users": 16, "round": 2}
+{"policy": "labels_shared", "requests": 32, "hit_rate": 0.7901, "ttft_p50_ms": 291.0, "ttft_p95_ms": 563.8, "latency_p50_ms": 806.3, "requests_per_s": 19.27, "output_tokens_per_s": 616.6, "prefill_tokens": 8805, "users": 16, "round": 2}
+{"policy": "labels", "requests": 128, "hit_rate": 0.8765, "ttft_p50_ms": 391.4, "ttft_p95_ms": 811.4, "latency_p50_ms": 945.5, "requests_per_s": 31.03, "output_tokens_per_s": 993.0, "prefill_tokens": 20723, "users": 64, "round": 1}
+{"policy": "labels_shared", "requests": 128, "hit_rate": 0.8701, "ttft_p50_ms": 408.4, "ttft_p95_ms": 665.0, "latency_p50_ms": 992.4, "requests_per_s": 30.7, "output_tokens_per_s": 982.5, "prefill_tokens": 21811, "users": 64, "round": 1}
+{"policy": "labels", "requests": 128, "hit_rate": 0.8765, "ttft_p50_ms": 475.8, "ttft_p95_ms": 706.7, "latency_p50_ms": 989.4, "requests_per_s": 30.79, "output_tokens_per_s": 985.4, "prefill_tokens": 20723, "users": 64, "round": 2}
+{"policy": "labels_shared", "requests": 128, "hit_rate": 0.8701, "ttft_p50_ms": 464.4, "ttft_p95_ms": 737.1, "latency_p50_ms": 1042.3, "requests_per_s": 30.25, "output_tokens_per_s": 967.9, "prefill_tokens": 21811, "users": 64, "round": 2}
+{"policy": "labels", "requests": 512, "hit_rate": 0.8963, "ttft_p50_ms": 407.8, "ttft_p95_ms": 531.5, "latency_p50_ms": 972.1, "requests_per_s": 32.53, "output_tokens_per_s": 1040.9, "prefill_tokens": 69621, "users": 256, "round": 1}
+{"policy": "labels_shared", "requests": 512, "hit_rate": 0.8901, "ttft_p50_ms": 310.4, "ttft_p95_ms": 556.8, "latency_p50_ms": 999.2, "requests_per_s": 31.56, "output_tokens_per_s": 1010.1, "prefill_tokens": 73781, "users": 256, "round": 1}
+{"policy": "labels", "requests": 512, "hit_rate": 0.8963, "ttft_p50_ms": 439.2, "ttft_p95_ms": 546.3, "latency_p50_ms": 1004.1, "requests_per_s": 31.62, "output_tokens_per_s": 1011.8, "prefill_tokens": 69621, "users": 256, "round": 2}
+{"policy": "labels_shared", "requests": 512, "hit_rate": 0.8901, "ttft_p50_ms": 430.0, "ttft_p95_ms": 599.7, "latency_p50_ms": 994.6, "requests_per_s": 31.17, "output_tokens_per_s": 997.4, "prefill_tokens": 73781, "users": 256, "round": 2}
+{"policy": "observe", "requests": 32, "hit_rate": 0.0, "ttft_p50_ms": 933.8, "ttft_p95_ms": 1530.8, "latency_p50_ms": 1960.8, "requests_per_s": 8.04, "output_tokens_per_s": 257.3, "prefill_tokens": 41957, "users": 16, "round": 1}
+{"policy": "observe", "requests": 32, "hit_rate": 0.0, "ttft_p50_ms": 891.5, "ttft_p95_ms": 1483.9, "latency_p50_ms": 1923.7, "requests_per_s": 8.15, "output_tokens_per_s": 260.8, "prefill_tokens": 41957, "users": 16, "round": 2}
+{"policy": "observe", "requests": 128, "hit_rate": 0.0, "ttft_p50_ms": 778.7, "ttft_p95_ms": 2538.9, "latency_p50_ms": 3544.8, "requests_per_s": 9.02, "output_tokens_per_s": 288.8, "prefill_tokens": 167859, "users": 64, "round": 1}
+{"policy": "observe", "requests": 128, "hit_rate": 0.0, "ttft_p50_ms": 933.5, "ttft_p95_ms": 2549.0, "latency_p50_ms": 3497.5, "requests_per_s": 8.99, "output_tokens_per_s": 287.6, "prefill_tokens": 167859, "users": 64, "round": 2}
+{"policy": "observe", "requests": 512, "hit_rate": 0.0, "ttft_p50_ms": 679.3, "ttft_p95_ms": 1106.0, "latency_p50_ms": 3538.6, "requests_per_s": 9.01, "output_tokens_per_s": 288.3, "prefill_tokens": 671413, "users": 256, "round": 1}
+{"policy": "observe", "requests": 512, "hit_rate": 0.0, "ttft_p50_ms": 683.3, "ttft_p95_ms": 1107.8, "latency_p50_ms": 3540.3, "requests_per_s": 8.99, "output_tokens_per_s": 287.5, "prefill_tokens": 671413, "users": 256, "round": 2}
+
+Qwen/Qwen3-8B: 4 orgs, 2-turn sessions, concurrency 32
+
+users policy             hit rate  TTFT p50  TTFT p95   e2e p50   req/s  prefill tok
+   16 stock #1              80.2%   249.9ms   539.3ms   773.3ms   20.12        8,293
+   16 per_user #1           48.2%   170.1ms  1479.5ms  1212.1ms   12.53       21,733
+   16 tag #1                79.6%   251.4ms   523.0ms   770.4ms   20.07        8,615
+   16 labels #1             79.8%   310.9ms   620.6ms   836.3ms   18.64        8,485
+   16 labels_shared #1      79.0%   305.4ms   598.7ms   828.1ms   18.64        8,805
+   16 observe #1             0.0%   933.8ms  1530.8ms  1960.8ms    8.04       41,957
+   16 stock #2              80.2%   254.6ms   530.4ms   768.8ms   20.21        8,293
+   16 per_user #2           48.2%   159.8ms  1455.5ms  1198.7ms   12.71       21,733
+   16 tag #2                79.6%   249.5ms   546.4ms   774.6ms   19.81        8,615
+   16 labels #2             79.8%   304.1ms   579.6ms   820.6ms   19.10        8,485
+   16 labels_shared #2      79.0%   291.0ms   563.8ms   806.3ms   19.27        8,805
+   16 observe #2             0.0%   891.5ms  1483.9ms  1923.7ms    8.15       41,957
+   64 stock #1              88.2%   294.2ms   664.6ms   869.6ms   34.66       19,763
+   64 per_user #1           48.2%   212.7ms  2515.4ms  2142.8ms   14.81       86,963
+   64 tag #1                87.6%   402.7ms   691.2ms   937.3ms   32.24       20,981
+   64 labels #1             87.6%   391.4ms   811.4ms   945.5ms   31.03       20,723
+   64 labels_shared #1      87.0%   408.4ms   665.0ms   992.4ms   30.70       21,811
+   64 observe #1             0.0%   778.7ms  2538.9ms  3544.8ms    9.02      167,859
+   64 stock #2              88.2%   408.5ms   656.3ms   925.6ms   32.66       19,763
+   64 per_user #2           48.2%   186.2ms  2525.9ms  2131.3ms   14.76       86,963
+   64 tag #2                87.6%   383.6ms   682.3ms   926.2ms   32.57       20,981
+   64 labels #2             87.6%   475.8ms   706.7ms   989.4ms   30.79       20,723
+   64 labels_shared #2      87.0%   464.4ms   737.1ms  1042.3ms   30.25       21,811
+   64 observe #2             0.0%   933.5ms  2549.0ms  3497.5ms    8.99      167,859
+  256 stock #1              90.2%   266.3ms   455.5ms   921.7ms   34.42       65,589
+  256 per_user #1           48.2%   208.6ms  1641.5ms  2155.3ms   14.84      347,829
+  256 tag #1                89.6%   393.4ms   485.1ms   943.5ms   33.24       70,513
+  256 labels #1             89.6%   407.8ms   531.5ms   972.1ms   32.53       69,621
+  256 labels_shared #1      89.0%   310.4ms   556.8ms   999.2ms   31.56       73,781
+  256 observe #1             0.0%   679.3ms  1106.0ms  3538.6ms    9.01      671,413
+  256 stock #2              90.2%   398.2ms   465.4ms   920.9ms   34.09       65,589
+  256 per_user #2           48.2%   184.8ms  1096.1ms  2153.7ms   14.81      347,829
+  256 tag #2                89.6%   287.1ms   486.7ms   955.7ms   33.24       70,513
+  256 labels #2             89.6%   439.2ms   546.3ms  1004.1ms   31.62       69,621
+  256 labels_shared #2      89.0%   430.0ms   599.7ms   994.6ms   31.17       73,781
+  256 observe #2             0.0%   683.3ms  1107.8ms  3540.3ms    8.99      671,413
+
+ifabsec time per call (http): ingress=2664us(cpu 2595)/2600 ingress.boundary=1482us(cpu 1473)/2600 ingress.verify=574us(cpu 538)/2600
+
+ifabsec time per call (scheduler): sched=14us(cpu 13)/224000 sched.unseal=636us(cpu 553)/2685
+
+results: /ifabsec/.pod/latency.json

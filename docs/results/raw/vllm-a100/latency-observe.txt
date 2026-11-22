@@ -1,0 +1,22 @@
+{"policy": "observe", "requests": 32, "hit_rate": 0.8023, "ttft_p50_ms": 296.4, "ttft_p95_ms": 577.6, "latency_p50_ms": 813.0, "requests_per_s": 19.14, "output_tokens_per_s": 612.4, "prefill_tokens": 8293, "users": 16, "round": 1}
+{"policy": "observe", "requests": 32, "hit_rate": 0.8023, "ttft_p50_ms": 292.5, "ttft_p95_ms": 556.0, "latency_p50_ms": 791.8, "requests_per_s": 19.67, "output_tokens_per_s": 629.6, "prefill_tokens": 8293, "users": 16, "round": 2}
+{"policy": "observe", "requests": 128, "hit_rate": 0.8823, "ttft_p50_ms": 449.3, "ttft_p95_ms": 748.0, "latency_p50_ms": 980.9, "requests_per_s": 30.68, "output_tokens_per_s": 981.7, "prefill_tokens": 19763, "users": 64, "round": 1}
+{"policy": "observe", "requests": 128, "hit_rate": 0.8823, "ttft_p50_ms": 447.8, "ttft_p95_ms": 710.0, "latency_p50_ms": 968.2, "requests_per_s": 31.1, "output_tokens_per_s": 995.2, "prefill_tokens": 19763, "users": 64, "round": 2}
+{"policy": "observe", "requests": 512, "hit_rate": 0.9023, "ttft_p50_ms": 436.5, "ttft_p95_ms": 508.8, "latency_p50_ms": 967.0, "requests_per_s": 32.26, "output_tokens_per_s": 1032.2, "prefill_tokens": 65589, "users": 256, "round": 1}
+{"policy": "observe", "requests": 512, "hit_rate": 0.9023, "ttft_p50_ms": 351.0, "ttft_p95_ms": 481.0, "latency_p50_ms": 958.2, "requests_per_s": 33.04, "output_tokens_per_s": 1057.2, "prefill_tokens": 65589, "users": 256, "round": 2}
+
+Qwen/Qwen3-8B: 4 orgs, 2-turn sessions, concurrency 32
+
+users policy             hit rate  TTFT p50  TTFT p95   e2e p50   req/s  prefill tok
+   16 observe #1            80.2%   296.4ms   577.6ms   813.0ms   19.14        8,293
+   16 observe #2            80.2%   292.5ms   556.0ms   791.8ms   19.67        8,293
+   64 observe #1            88.2%   449.3ms   748.0ms   980.9ms   30.68       19,763
+   64 observe #2            88.2%   447.8ms   710.0ms   968.2ms   31.10       19,763
+  256 observe #1            90.2%   436.5ms   508.8ms   967.0ms   32.26       65,589
+  256 observe #2            90.2%   351.0ms   481.0ms   958.2ms   33.04       65,589
+
+ifabsec time per call (http): ingress=2664us(cpu 2595)/2600 ingress.boundary=1482us(cpu 1473)/2600 ingress.verify=574us(cpu 538)/2600
+
+ifabsec time per call (scheduler): sched=14us(cpu 13)/224000 sched.unseal=636us(cpu 553)/2685
+
+results: /ifabsec/.pod/latency.json
