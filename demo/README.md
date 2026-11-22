@@ -4,6 +4,14 @@ A one-command demo on a real GPU. Someone in the audience types any account
 number. Alice sends it to a shared SGLang server, Eve reads it back from the
 cached-token counts, and then the same attack fails once labels are on.
 
+## A real run
+
+On an A100 with Qwen3-8B (2026-11-21): on stock SGLang the audience typed a
+5-digit number and Eve read back all five digits, one extra cached token per
+round, then stopped on her own. With labels the audience typed a 7-digit number
+and all ten of Eve's first-digit probes returned 18 cached tokens, exactly the
+org's shared instructions, so she got nothing.
+
 ## Run it
 
 On a GPU pod (an A100 or similar) with this repo cloned:

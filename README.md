@@ -39,7 +39,7 @@ content**. The v0.1 benchmark exists to measure exactly that.
 
 | Path | What it is | Status |
 |---|---|---|
-| `demo/` | One-command live demo: the audience types an account number, Eve reads it from a stock server and fails with labels (`bash scripts/demo.sh`) | Tested on the fake server |
+| `demo/` | One-command live demo: the audience types an account number, Eve reads it from a stock server and fails with labels (`bash scripts/demo.sh`) | Run on an A100 |
 | `docs/label-token.md` | The `ifab1` label-token spec and verification checklist | Draft v1 |
 | `docs/threat-model.md` | Channels, attacker positions, what is in and out of scope | Draft |
 | `gateway/token` | Go: Ed25519 mint and verify, scope rules, replay protection | Tested |
