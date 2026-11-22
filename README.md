@@ -106,6 +106,10 @@ that test fail, which is the leak.
 - Findings in third-party systems are reported to their maintainers before
   anything is published.
 
+## Author
+
+Srinivas N. Veereshwara. Built with AI assistance (Claude); every result in `docs/results/` comes from runs on real GPUs, with raw data alongside.
+
 ## License
 
 Apache 2.0, the same as SGLang.

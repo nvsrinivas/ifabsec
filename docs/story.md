@@ -83,24 +83,19 @@ Labels keep the cache's reuse and about 98% of its throughput. Median time to fi
 
 ## Beyond a single assistant
 
-The same shape appears across AI infrastructure: one server, many principals that share some text but must not share the rest.
+The same shape turns up wherever one server answers to many principals that share some text but must not share the rest. An internal AI platform serves many teams and applications from one model; each has its own instructions and tool descriptions, and once the gateway approves them they can be cached once for everyone who uses them. A SaaS vendor's product prompt is common to every customer, while customer data must never cross. Agent fleets with different permissions share base instructions on one server, and a handbook or codebase that many people paste into prompts can be cached once per team.
 
-- **Internal AI platforms**, where one model serves many teams and applications, each with its own instructions and tool descriptions, which the gateway can approve so they are cached once for everyone who uses them.
-- **Multi-tenant SaaS**, where a vendor's product prompt is common to every customer but customer data must never cross.
-- **Agent fleets**, where agents with different permissions share base instructions on one server.
-- **Team knowledge**, such as a handbook or codebase pasted into many prompts, which can be cached once per team.
-- **Inference providers and GPU clouds**, which today separate unrelated customers with coarse per-customer isolation.
-- **Regulated workloads** that put customer records in prompts. Scoping could keep each record with its owner, though that would need checking against each industry's rules, which has not been done yet.
+Further out, inference providers and GPU clouds separate unrelated customers today with coarse per-customer isolation, and finer scopes could recover some sharing inside each customer. Regulated workloads that put customer records in prompts could keep each record with its owner, though that would need checking against each industry's rules, which has not been done yet.
 
 The label is not specific to the prefix cache. Routing requests across replicas, and moving KV data between prefill and decode nodes in disaggregated serving, could carry the same scope. Only the cache has been built and measured so far.
 
 ## Limits and open questions
 
-- **Hosted APIs are a separate question.** A 2024 audit found cross-user cache sharing at seven API providers; what each does today is up to them. This work targets servers you run yourself, and finer boundaries inside one customer.
-- **The gateway is trusted.** A compromised gateway can label anything as shared, and someone still has to decide which prompts are organization-wide.
-- **Probing within a scope remains possible** by design. Anything stamped for a team is visible to that team.
-- **Other channels are untouched**, including eviction pressure and delays from batching and queueing.
-- **The validation so far is in-house**: one engine, two model families, synthetic tenants, and no outside review of the token design.
+This work targets servers you run yourself, and finer boundaries inside one customer. Hosted APIs are a separate question: a 2024 audit found cross-user cache sharing at seven API providers, and what each does today is up to them.
+
+The design moves trust rather than removing it. The gateway is trusted, so a compromised gateway can label anything as shared, and someone still has to decide which prompts are organization-wide. Probing inside a scope remains possible by design: anything stamped for a team is visible to that team. Other channels, such as eviction pressure and delays from batching and queueing, are untouched.
+
+The validation so far is in-house: one engine, two model families, synthetic tenants, and no outside review of the token design.
 
 ## What you can do today
 
@@ -114,3 +109,9 @@ If you run a shared inference server, four steps reduce this exposure, from chea
 Prefix caching is too valuable to switch off, and it doesn't have to leak. The server only needs to know, for each token, who is allowed to reuse it.
 
 The companion [white paper](whitepaper.md), *ifabsec: zero trust inside the inference engine*, has the full measurements, threat model and related research.
+
+---
+
+*About the author.* Srinivas N. Veereshwara is a networking engineer with more than 25 years in the field, including architecting a commercial zero-trust network access (ZTNA) product. ifabsec applies the same principle, checking identity on every request, inside the inference engine.
+
+*AI use.* This article was written with AI assistance (Claude), and the project was built and run by the author with AI assistance. All experiments ran on rented NVIDIA A100 and RTX 4090 GPUs; the code, raw results and demo recording are in the repository.
