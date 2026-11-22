@@ -1,0 +1,64 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "engine": "vllm",
+  "stock": [
+    {
+      "attack": "guess",
+      "k": 20,
+      "trials": 10,
+      "chance": 0.05,
+      "timing_accuracy": 1.0,
+      "metadata_accuracy": 1.0,
+      "median_latency_gap_ms": 31.03,
+      "cache_flushed_between_trials": true
+    },
+    {
+      "attack": "extract",
+      "digits": 6,
+      "trials": 5,
+      "mean_digits_recovered": 0,
+      "full_recovery_rate": 0.0,
+      "cache_flushed_between_trials": true
+    },
+    {
+      "attack": "extract_blocks",
+      "digits": 6,
+      "trials": 5,
+      "max_group": 3,
+      "mean_digits_recovered": 0,
+      "full_recovery_rate": 0.0,
+      "mean_probes": 1110,
+      "cache_flushed_between_trials": true
+    }
+  ],
+  "labels": [
+    {
+      "attack": "guess",
+      "k": 20,
+      "trials": 10,
+      "chance": 0.05,
+      "timing_accuracy": 0.1,
+      "metadata_accuracy": 0.0,
+      "median_latency_gap_ms": 0.52,
+      "cache_flushed_between_trials": true
+    },
+    {
+      "attack": "extract",
+      "digits": 6,
+      "trials": 5,
+      "mean_digits_recovered": 0,
+      "full_recovery_rate": 0.0,
+      "cache_flushed_between_trials": true
+    },
+    {
+      "attack": "extract_blocks",
+      "digits": 6,
+      "trials": 5,
+      "max_group": 3,
+      "mean_digits_recovered": 0,
+      "full_recovery_rate": 0.0,
+      "mean_probes": 1110,
+      "cache_flushed_between_trials": true
+    }
+  ]
+}

@@ -6,9 +6,14 @@ Each user runs short two-turn sessions on top of it; many sessions run
 concurrently. Three policies, same workload:
 
   stock     IFAB_MODE=off, no salt: everything shared (leaks)
-  per_user  IFAB_MODE=off, cache_salt = org/user, as a gateway would set it
-            with SGLang's built-in salt (safe; the org prompt is cached once
-            per user)
+  per_user  IFAB_MODE=off, cache_salt = org.user, as a gateway would set it
+            with the engine's built-in salt (safe; the org prompt is cached
+            once per user)
+  tag       IFAB_MODE=off, no salt; the gateway writes an opaque user tag at
+            the start of the first user message, right after the system
+            prompt. The simple alternative to labels: the prefix diverges at
+            the tag, so the org prompt stays shared, but the model reads the
+            tag and the engine trusts whoever wrote it.
   labels    IFAB_MODE=enforce with label tokens (safe; the org prompt is
             cached once per org)
   labels_shared  IFAB_MODE=enforce, every message labeled org-wide: nearly
@@ -35,6 +40,7 @@ Needs scripts/pod/setup.sh first. Writes .pod/latency.json.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import random
@@ -161,6 +167,18 @@ def _find(obj, key):
     return None
 
 
+def tag_messages(org: str, user: str, messages: list) -> list:
+    """The 'tag' policy: an opaque per-user tag before the first user message."""
+    tag = hashlib.sha256(f"{org}/{user}".encode()).hexdigest()[:8]
+    out, done = [], False
+    for m in messages:
+        if not done and m.get("role") == "user":
+            m = {**m, "content": f"[user {tag}] {m['content']}"}
+            done = True
+        out.append(m)
+    return out
+
+
 def http_sender(url: str, model: str, max_tokens: int, mint: Optional[Callable] = None) -> Sender:
     """Streams /v1/chat/completions and times the first content token."""
 
@@ -169,7 +187,9 @@ def http_sender(url: str, model: str, max_tokens: int, mint: Optional[Callable] 
                 "stream": True, "stream_options": {"include_usage": True}}
         headers = {"Content-Type": "application/json"}
         if policy == "per_user":
-            body["cache_salt"] = f"{org}/{user}"
+            body["cache_salt"] = f"{org}.{user}"  # vLLM rejects "/" in salts
+        if policy == "tag":
+            body["messages"] = tag_messages(org, user, messages)
         if policy in ("labels", "observe"):
             headers["X-Ifab-Token"] = mint(user, org, messages[:1])
         if policy == "labels_shared":
@@ -230,7 +250,7 @@ def main() -> int:
                     help="users per org; a comma list (4,16,64) sweeps load on one server start")
     ap.add_argument("--concurrency", type=int, default=Workload.concurrency)
     ap.add_argument("--repeat", type=int, default=2)
-    ap.add_argument("--policies", default="stock,per_user,labels,labels_shared,observe",
+    ap.add_argument("--policies", default="stock,per_user,tag,labels,labels_shared,observe",
                     help="comma list; servers with no selected policy are skipped")
     a = ap.parse_args()
     if not (STATE / "env").exists():
@@ -250,7 +270,7 @@ def main() -> int:
 
     check = _load_check()
     rows = []
-    for server_env, policies in (({"IFAB_MODE": "off"}, ("stock", "per_user")),
+    for server_env, policies in (({"IFAB_MODE": "off"}, ("stock", "per_user", "tag")),
                                  ({**env, "IFAB_PROFILE": "1"}, ("labels", "labels_shared")),
                                  ({**env, "IFAB_MODE": "observe", "IFAB_PROFILE": "1"}, ("observe",))):
         policies = tuple(p for p in policies if p in a.policies.split(","))
@@ -272,7 +292,7 @@ def main() -> int:
             server.stop()
 
     rows.sort(key=lambda r: (r["users"], r["round"]))
-    out = {"model": a.model, "workload": {**w.__dict__, "users_per_org": user_counts}, "results": rows}
+    out = {"model": a.model, "engine": check.ENGINE, "workload": {**w.__dict__, "users_per_org": user_counts}, "results": rows}
     (STATE / "latency.json").write_text(json.dumps(out, indent=2))
     print(f"\n{a.model}: {w.orgs} orgs, {w.turns}-turn sessions, concurrency {w.concurrency}\n")
     print(table(rows))

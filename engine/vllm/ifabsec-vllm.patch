@@ -1,0 +1,147 @@
+diff --git a/vllm/entrypoints/openai/chat_completion/serving.py b/vllm/entrypoints/openai/chat_completion/serving.py
+index 90f5af42..5e4756f8 100644
+--- a/vllm/entrypoints/openai/chat_completion/serving.py
++++ b/vllm/entrypoints/openai/chat_completion/serving.py
+@@ -11,6 +11,7 @@ from typing import Any, Final, cast
+ 
+ from fastapi import Request
+ 
++from vllm import ifabsec_hooks
+ from vllm.engine.protocol import EngineClient
+ from vllm.entrypoints.generate.base.protocol import (
+     DeltaMessage,
+@@ -318,6 +319,11 @@ class OpenAIServingChat(GenerateBaseServing):
+ 
+         conversation, engine_inputs = result
+ 
++        # ifabsec: verify the label token and set each input's cache_salt.
++        if (err := ifabsec_hooks.label_chat(
++                self, request, raw_request, engine_inputs)) is not None:
++            return self.create_error_response(err)
++
+         request_id = (
+             f"chatcmpl-{self._base_request_id(raw_request, request.request_id)}"
+         )
+diff --git a/vllm/ifabsec_hooks.py b/vllm/ifabsec_hooks.py
+new file mode 100644
+index 00000000..8d101500
+--- /dev/null
++++ b/vllm/ifabsec_hooks.py
+@@ -0,0 +1,83 @@
++"""ifabsec: zero-trust scopes for the prefix cache (https://github.com/nvsrinivas/ifabsec).
++
++Every hook is a no-op unless IFAB_MODE is observe or enforce. When active:
++
++* the OpenAI chat endpoint requires a gateway-signed X-Ifab-Token, checks
++  approved shared content, and puts a MAC'd internal salt describing which
++  prompt tokens belong to which scope in the request's cache_salt;
++* every prefix-cache block hash carries its block's scope, so identical text
++  under different scopes never matches;
++* any request without a valid internal salt (other endpoints, client-chosen,
++  forged or stale salts) gets a key of its own on every block.
++
++v0.1 supports text-only chat requests (no multimodal or embeddings sharing).
++"""
++
++from __future__ import annotations
++
++import os
++from typing import Any, Optional
++
++_ENABLED = os.environ.get("IFAB_MODE", "off") != "off"
++
++
++def block_salt_keys(request: Any, start_token_idx: int, end_token_idx: int) -> Optional[list]:
++    """Extra keys for one block's hash, or None to keep vLLM's own cache_salt key."""
++    if not _ENABLED:
++        return None
++    from ifabsec_engine.vllm_glue import block_keys
++
++    return block_keys(request, start_token_idx, end_token_idx)
++
++
++def label_chat(serving: Any, request: Any, raw_request: Any, engine_inputs: list) -> Optional[str]:
++    """Verify the label token and set each engine input's cache_salt.
++    Returns an error message for an HTTP 400, or None on success."""
++    if not _ENABLED:
++        return None
++    from ifabsec_engine import vllm_glue as glue
++
++    if getattr(request, "cache_salt", None) is not None:
++        return "ifabsec: cache_salt is set by the gateway, not the client"
++    for engine_input in engine_inputs:
++        if engine_input.get("type") != "token" or engine_input.get("cache_salt") is not None:
++            return "ifabsec v0.1 supports text-only requests"
++
++    tokenizer = serving.renderer.tokenizer
++    # Render prefixes the way vLLM rendered the prompt: same template and
++    # template variables, but never a generation prompt or a continued message.
++    template_kwargs = dict(serving._effective_chat_template_kwargs(request) or {})
++    for key in ("add_generation_prompt", "continue_final_message", "tools", "tokenize", "return_dict"):
++        template_kwargs.pop(key, None)
++    template = getattr(request, "chat_template", None) or getattr(serving, "chat_template", None)
++    if template:
++        template_kwargs["chat_template"] = template
++    messages = [
++        m.model_dump(exclude_none=True) if hasattr(m, "model_dump") else dict(m)
++        for m in request.messages
++    ]
++
++    # The tools vLLM renders into the prompt (online_renderer.render_chat).
++    tools = [t.model_dump() for t in (getattr(request, "tools", None) or [])] or None
++    render_tools = tools
++    if tools and request.tool_choice == "none" and getattr(serving, "exclude_tools_when_tool_choice_none", False):
++        render_tools = None
++
++    def render_prefix(k: int, with_tools=None) -> str:
++        return tokenizer.apply_chat_template(
++            messages[:k], tools=with_tools, tokenize=False, add_generation_prompt=False, **template_kwargs
++        )
++
++    def tokenize(text: str) -> list:
++        return tokenizer.encode(text, add_special_tokens=False)
++
++    header = raw_request.headers.get("x-ifab-token") if raw_request is not None else None
++    try:
++        for engine_input in engine_inputs:
++            engine_input["cache_salt"] = glue.label_request(
++                glue.config(), glue.verifier(), header, messages, list(engine_input["prompt_token_ids"]),
++                render_prefix, tokenize, tools=tools, render_tools=render_tools,
++            )
++    except glue.TokenError as e:
++        return f"ifabsec: {e}"
++    return None
+diff --git a/vllm/v1/core/kv_cache_utils.py b/vllm/v1/core/kv_cache_utils.py
+index 8cec22a6..b5d0977b 100644
+--- a/vllm/v1/core/kv_cache_utils.py
++++ b/vllm/v1/core/kv_cache_utils.py
+@@ -20,7 +20,7 @@ from typing import (
+     overload,
+ )
+ 
+-from vllm import envs
++from vllm import envs, ifabsec_hooks
+ from vllm.config import VllmConfig
+ from vllm.logger import init_logger
+ from vllm.multimodal.utils import get_mm_features_in_window
+@@ -652,11 +652,16 @@ def generate_block_hash_extra_keys(
+         request, start_token_idx, end_token_idx, start_mm_idx
+     )
+     lora_extra_keys = _gen_lora_extra_hash_keys(request)
+-    cache_salt_keys: list[tuple[str, str]] = (
+-        [("cache_salt", request.cache_salt)]
+-        if (start_token_idx == 0 and request.cache_salt)
+-        else []
++    # ifabsec: with scopes on, every block's hash carries its scope.
++    cache_salt_keys = ifabsec_hooks.block_salt_keys(
++        request, start_token_idx, end_token_idx
+     )
++    if cache_salt_keys is None:
++        cache_salt_keys = (
++            [("cache_salt", request.cache_salt)]
++            if (start_token_idx == 0 and request.cache_salt)
++            else []
++        )
+     prompt_embeds_keys = _gen_prompt_embeds_extra_hash_keys(
+         request, start_token_idx, end_token_idx
+     )

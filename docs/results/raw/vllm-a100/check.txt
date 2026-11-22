@@ -1,0 +1,20 @@
+org system prompt = 18 tokens
+[PASS] off: chat works: status 200
+[PASS] off: the leak exists on stock behavior: second sender's cached_tokens=48 of 53
+[SKIP] info: user-tag alternative changes the model's input: prompt_tokens 45 vs 36; 48-token greedy output differs
+[PASS] enforce: same prompt length and same greedy output as stock: prompt_tokens 36 vs 36, 48-token greedy output identical
+[PASS] enforce: labeled chat works: status 200 
+[PASS] enforce: model input identical to stock: 53 vs 53 ids
+[PASS] enforce: Alice re-sends, full hit: cached=48 of 53
+[PASS] enforce: Bob, identical text, hits only the org prompt: cached=16, org prompt=18, prompt=53
+[PASS] enforce: Eve (other org, same text) hits nothing: cached=0
+[PASS] enforce: request without a token is rejected: status 400
+[PASS] enforce: client-chosen cache_salt is rejected: status 400
+[PASS] enforce: /v1/completions without a token shares nothing: status 200, cached=0
+[PASS] enforce: approved tool schemas are shared with the org prompt: cached=144, org prompt=18, org prompt + tools=155
+[PASS] enforce: unapproved tool schemas are not shared: status 200, cached=0, org prompt=18
+[PASS] enforce: tools that differ from the approved ones are rejected: status 400
+[SKIP] enforce: overhead: median latency 34.5 ms vs 29.5 ms off
+[PASS] enforce: segment boundaries stable for this chat template: 0 'isolating request' warnings in the server log
+
+results: /ifabsec/.pod/results.json; server logs in /ifabsec/.pod

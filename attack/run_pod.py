@@ -65,12 +65,15 @@ def main() -> int:
             out[mode] = [harness.guess_attack(server, a.model, mint, k=a.k, trials=a.trials)]
             if digits_split:
                 out[mode].append(harness.extract_attack(server, a.model, mint, trials=max(3, a.trials // 2)))
+                if check.BLOCK > 1:  # block-granular cache: Eve guesses digits in groups
+                    out[mode].append(harness.extract_blocks_attack(server, a.model, mint,
+                                                                   trials=max(3, a.trials // 2)))
             for r in out[mode]:
                 print(json.dumps(r), flush=True)
         finally:
             server.stop()
 
-    (STATE / "attack.json").write_text(json.dumps({"model": a.model, **out}, indent=2))
+    (STATE / "attack.json").write_text(json.dumps({"model": a.model, "engine": check.ENGINE, **out}, indent=2))
     g_s, g_l = out["stock"][0], out["labels"][0]
     e_s = out["stock"][1] if digits_split else {"digits": 6, "mean_digits_recovered": "n/a"}
     e_l = out["labels"][1] if digits_split else {"mean_digits_recovered": "n/a"}
@@ -79,9 +82,12 @@ def main() -> int:
 guess, cached-token channel      {g_s['metadata_accuracy']:>6}    {g_l['metadata_accuracy']:>6}    {g_s['chance']:>6}
 guess, timing channel            {g_s['timing_accuracy']:>6}    {g_l['timing_accuracy']:>6}    {g_s['chance']:>6}
   latency gap, right vs wrong    {g_s['median_latency_gap_ms']:>5}ms  {g_l['median_latency_gap_ms']:>5}ms
-extract, digits recovered (of {e_s['digits']})  {e_s['mean_digits_recovered']:>6}    {e_l['mean_digits_recovered']:>6}
-
-results: {STATE / 'attack.json'}""")
+extract, digits recovered (of {e_s['digits']})  {e_s['mean_digits_recovered']:>6}    {e_l['mean_digits_recovered']:>6}""")
+    if len(out["stock"]) > 2:
+        b_s, b_l = out["stock"][2], out["labels"][2]
+        print(f"extract in digit groups, recovered   {b_s['mean_digits_recovered']:>6}    {b_l['mean_digits_recovered']:>6}"
+              f"   (probes per trial: {b_s['mean_probes']} / {b_l['mean_probes']})")
+    print(f"\nengine: {check.ENGINE}; results: {STATE / 'attack.json'}")
     return 0
 
 

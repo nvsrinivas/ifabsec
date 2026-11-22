@@ -1,0 +1,98 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "engine": "vllm",
+  "workload": {
+    "orgs": 4,
+    "users_per_org": [
+      4,
+      16,
+      64
+    ],
+    "system_words": 1100,
+    "message_words": 110,
+    "turns": 2,
+    "max_tokens": 32,
+    "concurrency": 32,
+    "seed": 0
+  },
+  "results": [
+    {
+      "policy": "observe",
+      "requests": 32,
+      "hit_rate": 0.8023,
+      "ttft_p50_ms": 296.4,
+      "ttft_p95_ms": 577.6,
+      "latency_p50_ms": 813.0,
+      "requests_per_s": 19.14,
+      "output_tokens_per_s": 612.4,
+      "prefill_tokens": 8293,
+      "users": 16,
+      "round": 1
+    },
+    {
+      "policy": "observe",
+      "requests": 32,
+      "hit_rate": 0.8023,
+      "ttft_p50_ms": 292.5,
+      "ttft_p95_ms": 556.0,
+      "latency_p50_ms": 791.8,
+      "requests_per_s": 19.67,
+      "output_tokens_per_s": 629.6,
+      "prefill_tokens": 8293,
+      "users": 16,
+      "round": 2
+    },
+    {
+      "policy": "observe",
+      "requests": 128,
+      "hit_rate": 0.8823,
+      "ttft_p50_ms": 449.3,
+      "ttft_p95_ms": 748.0,
+      "latency_p50_ms": 980.9,
+      "requests_per_s": 30.68,
+      "output_tokens_per_s": 981.7,
+      "prefill_tokens": 19763,
+      "users": 64,
+      "round": 1
+    },
+    {
+      "policy": "observe",
+      "requests": 128,
+      "hit_rate": 0.8823,
+      "ttft_p50_ms": 447.8,
+      "ttft_p95_ms": 710.0,
+      "latency_p50_ms": 968.2,
+      "requests_per_s": 31.1,
+      "output_tokens_per_s": 995.2,
+      "prefill_tokens": 19763,
+      "users": 64,
+      "round": 2
+    },
+    {
+      "policy": "observe",
+      "requests": 512,
+      "hit_rate": 0.9023,
+      "ttft_p50_ms": 436.5,
+      "ttft_p95_ms": 508.8,
+      "latency_p50_ms": 967.0,
+      "requests_per_s": 32.26,
+      "output_tokens_per_s": 1032.2,
+      "prefill_tokens": 65589,
+      "users": 256,
+      "round": 1
+    },
+    {
+      "policy": "observe",
+      "requests": 512,
+      "hit_rate": 0.9023,
+      "ttft_p50_ms": 351.0,
+      "ttft_p95_ms": 481.0,
+      "latency_p50_ms": 958.2,
+      "requests_per_s": 33.04,
+      "output_tokens_per_s": 1057.2,
+      "prefill_tokens": 65589,
+      "users": 256,
+      "round": 2
+    }
+  ]
+}

@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""First-GPU-session checks for the ifabsec SGLang patch.
+"""First-GPU-session checks for the ifabsec engine patch (SGLang or vLLM).
 
 Starts the patched server twice, first with IFAB_MODE=off (stock behavior,
 shows the leak) and then with IFAB_MODE=enforce, and checks the items in
-engine/sglang/README.md. Prints a report and writes .pod/results.json.
+engine/<engine>/README.md. Prints a report and writes .pod/results.json.
 
     python scripts/pod/check.py [--model Qwen/Qwen3-8B] [--port 30000]
+
+The engine is the one the last setup script installed (.pod/engine), or
+IFAB_ENGINE=sglang|vllm. Every pod script launches servers through this file.
 """
 
 from __future__ import annotations
@@ -23,6 +26,20 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 STATE = REPO / ".pod"
+
+
+def engine() -> str:
+    name = os.environ.get("IFAB_ENGINE") or (
+        (STATE / "engine").read_text().strip() if (STATE / "engine").exists() else "sglang")
+    if name not in ("sglang", "vllm"):
+        sys.exit(f"unknown engine {name!r}; use sglang or vllm")
+    return name
+
+
+ENGINE = engine()
+# Cache granularity: SGLang matches token by token; vLLM caches and reports
+# whole 16-token blocks, so a cached count can fall up to one block short.
+BLOCK = 16 if ENGINE == "vllm" else 1
 
 SYSTEM = {"role": "system", "content": "You are Acme Corp's internal support assistant. Answer briefly."}
 SECRET = "Customer 88214 disputes invoice 4417 for $12,950 and threatens to cancel."
@@ -42,14 +59,21 @@ def record(name: str, ok: bool | None, detail: str) -> None:
 
 
 def ensure_current_hook() -> None:
-    """Refuse to start if the installed SGLang carries an older copy of the hook
-    than this checkout (the branch changed after setup.sh ran)."""
-    import sglang
+    """Refuse to start if the installed engine carries an older copy of the hook
+    than this checkout (the branch changed after the setup script ran)."""
+    if ENGINE == "vllm":
+        import vllm
 
-    installed = Path(sglang.__file__).parent / "srt" / "ifabsec_hooks.py"
-    repo = Path(__file__).resolve().parents[2] / "engine" / "sglang" / "ifabsec_hooks.py"
+        installed = Path(vllm.__file__).parent / "ifabsec_hooks.py"
+        setup = "setup-vllm.sh"
+    else:
+        import sglang
+
+        installed = Path(sglang.__file__).parent / "srt" / "ifabsec_hooks.py"
+        setup = "setup.sh"
+    repo = REPO / "engine" / ENGINE / "ifabsec_hooks.py"
     if not installed.exists() or installed.read_text() != repo.read_text():
-        sys.exit("the installed SGLang patch is out of date for this checkout; run bash scripts/pod/setup.sh")
+        sys.exit(f"the installed {ENGINE} patch is out of date for this checkout; run bash scripts/pod/{setup}")
 
 
 class Server:
@@ -57,12 +81,32 @@ class Server:
         ensure_current_hook()
         self.url = f"http://127.0.0.1:{port}"
         self.log_path = log
-        args = [sys.executable, "-m", "sglang.launch_server", "--model-path", model,
-                "--port", str(port), "--host", "127.0.0.1"]
-        help_text = subprocess.run([sys.executable, "-m", "sglang.launch_server", "--help"],
-                                   capture_output=True, text=True).stdout
-        if "--enable-cache-report" in help_text:
-            args.append("--enable-cache-report")
+        if ENGINE == "vllm":
+            # Dev mode enables POST /reset_prefix_cache, used to flush between trials.
+            env = {**env, "VLLM_SERVER_DEV_MODE": "1"}
+            # The `vllm` console script, as vLLM is normally started. Not
+            # `python -m vllm.entrypoints.cli.main`: worker processes re-import
+            # a __main__ module, and torch then registers kernels twice.
+            exe = Path(sys.executable).with_name("vllm")
+            launcher = [str(exe)] if exe.exists() else [
+                sys.executable, "-c", "from vllm.entrypoints.cli.main import main; main()"]
+            args = [*launcher, "serve", model,
+                    "--port", str(port), "--host", "127.0.0.1",
+                    "--enable-prefix-caching", "--enable-prompt-tokens-details",
+                    # Pin 16-token blocks, the finest granularity vLLM offers:
+                    # the most an attacker can learn per probe. The default can
+                    # be larger, and then short test prompts fill no block at all.
+                    "--block-size", str(BLOCK), "--prefix-match-unit", str(BLOCK),
+                    # Requests with tools need a tool parser (Qwen uses hermes).
+                    "--enable-auto-tool-choice", "--tool-call-parser",
+                    os.environ.get("IFAB_TOOL_PARSER", "hermes")]
+        else:
+            args = [sys.executable, "-m", "sglang.launch_server", "--model-path", model,
+                    "--port", str(port), "--host", "127.0.0.1"]
+            help_text = subprocess.run([sys.executable, "-m", "sglang.launch_server", "--help"],
+                                       capture_output=True, text=True).stdout
+            if "--enable-cache-report" in help_text:
+                args.append("--enable-cache-report")
         self.log = open(log, "w")
         self.proc = subprocess.Popen(args, env={**os.environ, **env}, stdout=self.log, stderr=subprocess.STDOUT)
 
@@ -126,8 +170,9 @@ def find_key(obj, key):
 
 
 def chat(server, model, messages, token=None, extra=None):
+    ids_flag = "return_token_ids" if ENGINE == "vllm" else "return_prompt_token_ids"
     body = {"model": model, "messages": messages, "max_tokens": 1, "temperature": 0,
-            "return_prompt_token_ids": True, **(extra or {})}
+            ids_flag: True, **(extra or {})}
     headers = {"X-Ifab-Token": token} if token else {}
     status, resp, latency = server.post("/v1/chat/completions", body, headers)
     cached = find_key(resp.get("usage") or {}, "cached_tokens")
@@ -173,13 +218,22 @@ def run(model: str, port: int, only: str = "all") -> None:
                 record("off: cached-token reporting", False,
                        "no cached_tokens in usage; is --enable-cache-report supported?")
             b = chat(off, model, msgs(SECRET))  # a different tenant sending identical text
-            record("off: the leak exists on stock behavior", (b["cached"] or 0) >= (b["prompt_tokens"] or 1) - 1,
+            record("off: the leak exists on stock behavior", (b["cached"] or 0) >= (b["prompt_tokens"] or 1) - BLOCK,
                    f"second sender's cached_tokens={b['cached']} of {b['prompt_tokens']}")
             ref_ids = a["ids"]
             # Empty cache on both sides: a cached prefix changes the floating-point
             # path enough to change a long greedy output, which is not an input difference.
             off.flush()
             ref_greedy = chat(off, model, msgs(IDENTITY_TEXT), extra={"max_tokens": 48})
+            # The user-tag alternative (bench policy "tag") puts the tag in the prompt itself.
+            sys.path.insert(0, str(REPO))
+            from bench.latency import tag_messages
+
+            off.flush()
+            tagged = chat(off, model, tag_messages("acme", "idcheck", msgs(IDENTITY_TEXT)), extra={"max_tokens": 48})
+            record("info: user-tag alternative changes the model's input", None,
+                   f"prompt_tokens {tagged['prompt_tokens']} vs {ref_greedy['prompt_tokens']}; 48-token greedy output "
+                   f"{'identical' if tagged['content'] == ref_greedy['content'] else 'differs'}")
             off_lat = [chat(off, model, msgs(f"probe {i}"))["latency"] for i in range(10)]
     finally:
         if off is not None:
@@ -209,12 +263,12 @@ def run(model: str, port: int, only: str = "all") -> None:
             record("enforce: model input identical to stock", None, "server did not return prompt_token_ids")
 
         alice2 = chat(on, model, msgs(SECRET), token("alice", "acme"))
-        record("enforce: Alice re-sends, full hit", (alice2["cached"] or 0) >= (alice2["prompt_tokens"] or 1) - 1,
+        record("enforce: Alice re-sends, full hit", (alice2["cached"] or 0) >= (alice2["prompt_tokens"] or 1) - BLOCK,
                f"cached={alice2['cached']} of {alice2['prompt_tokens']}")
 
         bob = chat(on, model, msgs(SECRET), token("bob", "acme"))
         record("enforce: Bob, identical text, hits only the org prompt",
-               bob["cached"] is not None and 0 < bob["cached"] <= org_len,
+               bob["cached"] is not None and max(0, org_len - BLOCK) < bob["cached"] <= org_len,
                f"cached={bob['cached']}, org prompt={org_len}, prompt={bob['prompt_tokens']}")
 
         eve = chat(on, model, msgs(SECRET), token("eve", "beta"))
@@ -227,9 +281,14 @@ def run(model: str, port: int, only: str = "all") -> None:
                f"status {salted['status']}")
 
         text = tok.apply_chat_template(msgs(SECRET), tokenize=False, add_generation_prompt=True)
-        status, raw, _ = on.post("/generate", {"text": text, "sampling_params": {"max_new_tokens": 1}})
+        if ENGINE == "vllm":
+            endpoint = "/v1/completions"
+            status, raw, _ = on.post(endpoint, {"model": model, "prompt": text, "max_tokens": 1})
+        else:
+            endpoint = "/generate"
+            status, raw, _ = on.post(endpoint, {"text": text, "sampling_params": {"max_new_tokens": 1}})
         raw_cached = find_key(raw, "cached_tokens")
-        record("enforce: /generate without a token shares nothing", status == 200 and raw_cached == 0,
+        record(f"enforce: {endpoint} without a token shares nothing", status == 200 and raw_cached == 0,
                f"status {status}, cached={raw_cached}")
 
         # ---- tool schemas: shared only when the token approves them

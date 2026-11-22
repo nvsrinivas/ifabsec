@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "engine")]
 
 from attack.fakeserver import FakeServer  # noqa: E402
-from bench.latency import Sample, Workload, build_sessions, run_policy  # noqa: E402
+from bench.latency import Sample, Workload, build_sessions, run_policy, tag_messages  # noqa: E402
 from ifabsec_engine import sglang_glue as g  # noqa: E402
 from ifabsec_engine.devmint import chat_token, public_key  # noqa: E402
 
@@ -26,7 +26,9 @@ def fake_sender(server: FakeServer):
         body = {"messages": messages}
         headers = {}
         if policy == "per_user":
-            body["cache_salt"] = f"{org}/{user}"
+            body["cache_salt"] = f"{org}.{user}"  # vLLM rejects "/" in salts
+        if policy == "tag":
+            body["messages"] = tag_messages(org, user, messages)
         if policy in ("labels", "labels_shared"):
             shared = messages[:1] if policy == "labels" else messages
             headers["X-Ifab-Token"] = chat_token(SEED, kid="dev-1", aud="pod-1", user=user,
@@ -54,6 +56,22 @@ def test_policies_order_as_expected():
     assert stock["hit_rate"] >= labels["hit_rate"] > per_user["hit_rate"]
     assert labels["prefill_tokens"] < per_user["prefill_tokens"]
     assert labels["ttft_p50_ms"] < per_user["ttft_p50_ms"]
+
+
+def test_tag_baseline_shares_the_org_prompt_like_labels():
+    """The user tag keeps the org prompt shared (unlike per-user salt), at a
+    hit rate close to labels: the cost case for labels is not about sharing."""
+    tag, labels, per_user = run("tag"), run("labels"), run("per_user")
+    assert tag["hit_rate"] > per_user["hit_rate"]
+    assert abs(tag["hit_rate"] - labels["hit_rate"]) < 0.05
+
+
+def test_tag_goes_right_after_the_system_prompt():
+    msgs = [{"role": "system", "content": "S"}, {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "a"}, {"role": "user", "content": "again"}]
+    out = tag_messages("acme", "alice", msgs)
+    assert out[0] == msgs[0] and out[1]["content"].startswith("[user ") and out[3] == msgs[3]
+    assert out[1] != tag_messages("acme", "bob", msgs)[1]
 
 
 def test_sessions_are_deterministic_and_share_org_prompts():
@@ -104,7 +122,7 @@ def test_http_sender_parses_sglang_style_stream():
         assert sample.output_tokens == 2 and 0 < sample.ttft <= sample.latency
         assert seen["token"] == "tok" and seen["body"]["stream"] is True
         send("per_user", "org0", "org0-u1", [{"role": "user", "content": "x"}])
-        assert seen["body"]["cache_salt"] == "org0/org0-u1"
+        assert seen["body"]["cache_salt"] == "org0.org0-u1"
     finally:
         srv.shutdown()
 

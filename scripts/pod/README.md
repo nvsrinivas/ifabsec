@@ -83,3 +83,19 @@ tail -f suite.log
   policy twice, including the `labels_shared` overhead control.
 - **Time:** about 1.5–2 hours. The end of `suite.log` prints a summary, also
   saved as `.pod/runs/summary.txt`. Send that, then terminate the pod.
+
+## vLLM
+
+The same scripts run against vLLM (patch in `engine/vllm/`). Use the image
+`vllm/vllm-openai:v0.34.0` (or any CUDA image; the setup script then installs
+`vllm==0.34.0`), get the repo onto the pod as above, and run everything in one
+go:
+
+```sh
+ENGINE=vllm MODELS=Qwen/Qwen3-8B bash scripts/pod/suite.sh
+```
+
+or step by step: `bash scripts/pod/setup-vllm.sh`, then `check.py`,
+`attack/run_pod.py` and `bench/latency.py` as for SGLang. The setup script
+records the engine in `.pod/engine`; `bash scripts/pod/setup.sh` switches the
+pod back to SGLang. Results land in `.pod/runs-vllm/`.
