@@ -1,4 +1,4 @@
-# Sharing an AI server without sharing secrets
+# Sharing an AI server without sharing your prompts
 
 November 21, 2026 · a companion to the [white paper](whitepaper.md)
 
