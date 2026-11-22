@@ -41,8 +41,20 @@ def record(name: str, ok: bool | None, detail: str) -> None:
 # ------------------------------------------------------------------ server
 
 
+def ensure_current_hook() -> None:
+    """Refuse to start if the installed SGLang carries an older copy of the hook
+    than this checkout (the branch changed after setup.sh ran)."""
+    import sglang
+
+    installed = Path(sglang.__file__).parent / "srt" / "ifabsec_hooks.py"
+    repo = Path(__file__).resolve().parents[2] / "engine" / "sglang" / "ifabsec_hooks.py"
+    if not installed.exists() or installed.read_text() != repo.read_text():
+        sys.exit("the installed SGLang patch is out of date for this checkout; run bash scripts/pod/setup.sh")
+
+
 class Server:
     def __init__(self, model: str, port: int, env: dict, log: Path):
+        ensure_current_hook()
         self.url = f"http://127.0.0.1:{port}"
         self.log_path = log
         args = [sys.executable, "-m", "sglang.launch_server", "--model-path", model,

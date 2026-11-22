@@ -78,7 +78,7 @@ Labels keep the cache's reuse and about 98% of its throughput. Median time to fi
 
 The same shape appears across AI infrastructure: one server, many principals that share some text but must not share the rest.
 
-- **Internal AI platforms**, where one model serves many teams and applications, each with its own instructions and tool descriptions. Today these are shared only when written into the system prompt, not when passed in the API's tools field.
+- **Internal AI platforms**, where one model serves many teams and applications, each with its own instructions and tool descriptions, which the gateway can approve so they are cached once for everyone who uses them.
 - **Multi-tenant SaaS**, where a vendor's product prompt is common to every customer but customer data must never cross.
 - **Agent fleets**, where agents with different permissions share base instructions on one server.
 - **Team knowledge**, such as a handbook or codebase pasted into many prompts, which can be cached once per team.
@@ -89,7 +89,7 @@ The label is not specific to the prefix cache. Routing requests across replicas,
 
 ## Limits and open questions
 
-- **Hosted APIs are a separate question.** A 2024 audit found cross-user cache sharing at seven API providers; what each does today is up to them. This work targets servers you run yourself, and finer boundaries inside one customer. Tool descriptions passed in the API's tools field are not shared yet; only those written into the system prompt are.
+- **Hosted APIs are a separate question.** A 2024 audit found cross-user cache sharing at seven API providers; what each does today is up to them. This work targets servers you run yourself, and finer boundaries inside one customer.
 - **The gateway is trusted.** A compromised gateway can label anything as shared, and someone still has to decide which prompts are organization-wide.
 - **Probing within a scope remains possible** by design. Anything stamped for a team is visible to that team.
 - **Other channels are untouched**, including eviction pressure and delays from batching and queueing.

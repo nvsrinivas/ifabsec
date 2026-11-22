@@ -59,7 +59,7 @@ Labels defend against a tenant with ordinary API access who watches response tim
 - **Allowed by design:** anyone inside a scope can still probe that scope. Team-scoped text is visible to the whole team.
 - **Policy, not mechanism:** someone must decide which prompts are org-approved. The token carries that decision; it does not make it.
 - **Replay:** each engine process remembers token IDs until they expire: at most 5 minutes, plus 30 seconds of allowed clock skew. Tokens are bearer credentials, so a captured unused token works until then, and separate processes or replicas each accept it once. The gateway-to-engine hop therefore needs its own protection, such as mTLS or the tunnel, which this prototype does not provide yet.
-- **Not covered:** eviction-pressure probing (per-scope quotas planned); timing from batching and queueing; KV transfer between nodes in disaggregated serving; SGLang's other cache backends, which fail closed and lose sharing. Tool schemas passed in the API's tools field are not part of the approved content, so they are user-scoped and not shared; schemas written into the system prompt are shared. The engine also tokenizes the prompt and checks the signature before it can reject a bad label, which gives an attacker some cheap load.
+- **Not covered:** eviction-pressure probing (per-scope quotas planned); timing from batching and queueing; KV transfer between nodes in disaggregated serving; SGLang's other cache backends, which fail closed and lose sharing. Tool schemas passed in the API's tools field are shared only when the token approves them by hash; unapproved schemas stay in the user's scope. The engine also tokenizes the prompt and checks the signature before it can reject a bad label, which gives an attacker some cheap load.
 - **Not yet reviewed:** nobody outside this project has reviewed the token design.
 
 ## Evaluation
@@ -101,7 +101,7 @@ On stock SGLang (4090 figures from the first of two runs), a right guess came ba
 
 - The labeled path feeds the model exactly the same token ids as stock and, with caches flushed, produces the same greedy output.
 - Alice's repeat of her own prompt hits all but the last token; Bob, in her org, gets exactly the org prompt; a user in another org gets nothing.
-- A second chat-template family, Phi-4-mini, first failed closed: its template appends an end-of-text token when rendering a partial chat. Defining the boundary as the common prefix with the full prompt fixed it, and all checks pass with no isolated requests.
+- A second chat-template family, Phi-4-mini, first failed closed: its template appends an end-of-text token when rendering a partial chat. Defining the boundary as the common prefix with the full prompt fixed it, and all checks pass with no isolated requests. Tool schemas approved by the token were shared on the A100 (155 tokens with the org prompt, against 18 without), unapproved ones were not, and altered ones were rejected.
 
 ### Cost under load
 
