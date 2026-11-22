@@ -135,7 +135,12 @@ Reject the request unless all of these hold:
 7. Every scope parses; every segment scope is in `read`; segments are well formed.
 8. The segment scopes form a valid chain under the narrowing rule.
 9. Each shared-scope segment's `content_sha256` matches the received messages.
+10. If the engine limits this `kid` to a set of orgs, every scope in `read` that
+    names an org belongs to that set. One leaked key then exposes only its own
+    orgs. A `kid` with no limit may mint for any org (a single gateway serving
+    every org).
 
-Steps 1–8 are implemented identically in `gateway/token` (Go) and
+Step 10 is engine configuration: `IFAB_GATEWAY_KEYS=kid:hex[:org1|org2],...`.
+The Python engine implements it; the Go library does not need to. Steps 1–8 are implemented identically in `gateway/token` (Go) and
 `engine/ifabsec_engine` (Python). `testdata/token_vector_v1.json` is a fixed
 token both test suites check, so the two implementations cannot drift apart.

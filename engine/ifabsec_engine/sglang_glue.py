@@ -109,6 +109,7 @@ class Config:
     gateway_keys: Mapping[str, bytes] = None  # kid -> Ed25519 public key
     internal_key: bytes = b""  # shared by ingress and scheduler processes
     observe: bool = False  # IFAB_MODE=observe: every check runs, cache keyed like stock (measuring cost only)
+    key_orgs: Mapping[str, frozenset] = None  # kid -> orgs it may mint for (absent: any)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Config":
@@ -117,10 +118,15 @@ class Config:
             return cls(enforce=False)
         if mode not in ("enforce", "observe"):
             raise ValueError(f"IFAB_MODE must be 'off', 'enforce' or 'observe', got {mode!r}")
-        keys = {}
+        # IFAB_GATEWAY_KEYS: kid:hex[:org1|org2],... -- the optional org list
+        # limits which orgs that key may mint scopes for.
+        keys, key_orgs = {}, {}
         for item in filter(None, env.get("IFAB_GATEWAY_KEYS", "").split(",")):
-            kid, _, hexkey = item.partition(":")
+            kid, _, rest = item.partition(":")
+            hexkey, _, orgs = rest.partition(":")
             keys[kid.strip()] = bytes.fromhex(hexkey.strip())
+            if orgs.strip():
+                key_orgs[kid.strip()] = frozenset(o.strip() for o in orgs.split("|") if o.strip())
         internal = bytes.fromhex(env.get("IFAB_INTERNAL_KEY", ""))
         audience = env.get("IFAB_AUDIENCE", "")
         if not keys or not audience or len(internal) < 32:
@@ -128,7 +134,7 @@ class Config:
                 "IFAB_MODE=enforce needs IFAB_AUDIENCE, IFAB_GATEWAY_KEYS (kid:hex,...) "
                 "and IFAB_INTERNAL_KEY (>= 32 bytes hex)"
             )
-        return cls(True, audience, keys, internal, observe=mode == "observe")
+        return cls(True, audience, keys, internal, observe=mode == "observe", key_orgs=key_orgs)
 
 
 _config: Optional[Config] = None
@@ -151,7 +157,7 @@ def verifier() -> Verifier:
         cfg = config()
         with _lock:
             if _verifier is None:
-                _verifier = Verifier(cfg.audience, cfg.gateway_keys)
+                _verifier = Verifier(cfg.audience, cfg.gateway_keys, key_orgs=cfg.key_orgs)
     return _verifier
 
 

@@ -72,7 +72,12 @@ def test_config_from_env():
         "IFAB_MODE": "enforce", "IFAB_AUDIENCE": "c1",
         "IFAB_GATEWAY_KEYS": f"k1:{PUB.hex()}", "IFAB_INTERNAL_KEY": INTERNAL.hex(),
     })
-    assert c.enforce and c.gateway_keys == {"k1": PUB}
+    assert c.enforce and c.gateway_keys == {"k1": PUB} and c.key_orgs == {}
+    c = g.Config.from_env({
+        "IFAB_MODE": "enforce", "IFAB_AUDIENCE": "c1",
+        "IFAB_GATEWAY_KEYS": f"k1:{PUB.hex()}:acme|beta,k2:{PUB.hex()}", "IFAB_INTERNAL_KEY": INTERNAL.hex(),
+    })
+    assert c.key_orgs == {"k1": frozenset({"acme", "beta"})} and set(c.gateway_keys) == {"k1", "k2"}
 
 
 def test_salt_marks_system_prompt_as_org(cfg):
