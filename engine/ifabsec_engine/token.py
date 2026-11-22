@@ -15,7 +15,7 @@ import heapq
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Iterable, Mapping, Sequence
+from typing import Optional, Callable, Iterable, Mapping, Sequence
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -54,6 +54,10 @@ class ReplayError(TokenError):
 
 class ContentMismatch(TokenError):
     pass
+
+
+class KeyScopeError(TokenError):
+    """The signing key is not allowed to mint scopes for this org."""
 
 
 def _b64decode(s: str) -> bytes:
@@ -166,9 +170,13 @@ class Verifier:
         audience: str,
         keys: Mapping[str, bytes],
         now: Callable[[], float] = time.time,
+        key_orgs: Optional[Mapping[str, frozenset]] = None,
     ):
+        """key_orgs maps a kid to the orgs it may mint scopes for. A kid absent
+        from key_orgs is unrestricted (one gateway serving every org)."""
         self.audience = audience
         self._keys = {kid: Ed25519PublicKey.from_public_bytes(k) for kid, k in keys.items()}
+        self._key_orgs = dict(key_orgs or {})
         self._now = now
         self._seen: dict[str, int] = {}
         self._expiry: list[tuple[int, str]] = []  # min-heap of (until, jti)
@@ -196,6 +204,12 @@ class Verifier:
         if claims.get("aud") != self.audience:
             raise AudienceError("wrong audience")
         segs, eff = _check_claims(claims)
+        allowed = self._key_orgs.get(claims["kid"])
+        if allowed is not None:
+            for r in claims["read"]:
+                org = parse_scope(r).org
+                if org and org not in allowed:
+                    raise KeyScopeError(f"key {claims['kid']} may not mint scopes for org {org}")
         t = int(self._now())
         if claims["iat"] > t + CLOCK_SKEW or t >= claims["exp"] + CLOCK_SKEW:
             raise ExpiredError("token expired or not yet valid")

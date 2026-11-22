@@ -145,3 +145,14 @@ def test_user_scopes_are_namespaced_by_org():
     assert not parse_scope("team:beta/risk").is_ancestor_of(a)
     with pytest.raises(ValueError):
         narrow(parse_scope("org:beta"), a)  # another org's prefix can't narrow into acme's user
+
+
+def test_key_limited_to_its_orgs():
+    from ifabsec_engine import KeyScopeError
+
+    pub = bytes.fromhex(VECTOR["public_key_hex"])
+    limited = Verifier("cluster-1", {"gw-key-1": pub}, now=lambda: T0 + 10, key_orgs={"gw-key-1": frozenset({"beta"})})
+    with pytest.raises(KeyScopeError):
+        limited.verify(mint(claims()))  # an acme token signed by a key that serves only beta
+    ok = Verifier("cluster-1", {"gw-key-1": pub}, now=lambda: T0 + 10, key_orgs={"gw-key-1": frozenset({"acme"})})
+    assert ok.verify(mint(claims())).effective
