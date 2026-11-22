@@ -64,11 +64,11 @@ Labels defend against a tenant with ordinary API access who watches response tim
 
 ## Evaluation
 
-Stock SGLang leaked a full account number to a same-org co-worker on both GPUs, and labels closed every channel we tested while keeping the org prompt shared. Setup: SGLang `efab9d61` with the ifabsec patch, Qwen3-8B unless noted, synthetic tenants, attacks only against our own servers. Eve sits in Alice's org, so she legitimately shares the org system prompt.
+Stock SGLang leaked a full account number to a same-org co-worker on both GPUs, and labels closed every channel tested while keeping the org prompt shared. Setup: SGLang `efab9d61` with the ifabsec patch, Qwen3-8B unless noted, synthetic tenants, attacks only against servers set up for the tests. Eve sits in Alice's org, so she legitimately shares the org system prompt.
 
 ### How the attack works
 
-Eve needs nothing but the API and the cached-token count that comes back in each response's usage block. SGLang's chat endpoint reports that count only when the server runs with `--enable-cache-report`, which our tests turn on; many hosted APIs report it by default, and the timing channel needs no count at all. The prompts below are the ones the test harness sends; the account number is drawn at random for each trial, and this one is from the A100 run below.
+Eve needs nothing but the API and the cached-token count that comes back in each response's usage block. SGLang's chat endpoint reports that count only when the server runs with `--enable-cache-report`, which the tests turn on; many hosted APIs report it by default, and the timing channel needs no count at all. The prompts below are the ones the test harness sends; the account number is drawn at random for each trial, and this one is from the A100 run below.
 
 ```text
 System (shared by the org):  You are Acme Corp's internal billing assistant. Answer briefly.
@@ -135,7 +135,7 @@ Other defenses decide inside the engine what is sensitive; ifabsec takes that de
 | [CacheSolidarity](https://arxiv.org/abs/2603.10726) | Tracks reuse across users, flags suspicious sharing, isolates flagged prefixes | Prevents cross-scope matches up front rather than reacting to suspicious reuse |
 | [CachePrune](https://arxiv.org/abs/2605.23640) | Fine-grained sharing of privacy-irrelevant segments such as system instructions | Same goal; segments marked by a signed gateway policy |
 
-To our knowledge, ifabsec is the first to enforce gateway-signed sharing scopes inside a production engine's prefix cache, measured for both leakage and cost on real GPUs. That claim needs a fuller literature check before publication.
+ifabsec appears to be the first to enforce gateway-signed sharing scopes inside a production engine's prefix cache, measured for both leakage and cost on real GPUs. That claim needs a fuller literature check before publication.
 
 ## Next steps
 

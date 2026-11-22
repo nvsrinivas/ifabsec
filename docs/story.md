@@ -19,7 +19,7 @@ Acme self-hosts a billing assistant. Every employee's chat opens with the same i
 Eve wants that number. She has no access to Alice's session or the server's logs, only the API everyone uses. But the cache is shared, so Eve's requests can match the beginning of Alice's. The server tells her when they do: in the token counts it reports and, for long matches, in how fast it answers.
 
 
-The attack has one real prerequisite: Eve must know how Alice's message begins. That holds for forms, templates and agent prompts, where messages follow a fixed shape. It holds much less for free-form chat. Eve also has to probe while Alice's entry is still cached; how long that lasts depends on cache size and load. Everything below ran on real hardware: an NVIDIA A100 serving Qwen3-8B on SGLang, attacked only on our own server, with synthetic users.
+The attack has one real prerequisite: Eve must know how Alice's message begins. That holds for forms, templates and agent prompts, where messages follow a fixed shape. It holds much less for free-form chat. Eve also has to probe while Alice's entry is still cached; how long that lasts depends on cache size and load. Everything below ran on real hardware: an NVIDIA A100 serving Qwen3-8B on SGLang, attacked only on a server set up for the test, with synthetic users.
 
 ## Reading a number one digit at a time
 
@@ -55,13 +55,13 @@ The payoff is large wherever requests share a long opening: system prompts, tool
 
 The standard mitigation is to stop sharing. SGLang and vLLM accept a per-request cache salt: a tag mixed into the cache key, so only requests with the same tag share entries. Set by the gateway per user, it closes this channel.
 
-It also throws away the sharing the cache exists for. Every user now pays to prefill the company instructions separately and keeps a private copy of them in GPU memory. In our A100 runs with 1,024 users, per-user salting cut cache reuse from 91% to 48% and halved throughput. It also pushed 95th-percentile time to first token from about 0.2 to 1.5 seconds, while the median moved less, from 166 to 213 ms. Operators are left choosing between a leak and a large bill.
+It also throws away the sharing the cache exists for. Every user now pays to prefill the company instructions separately and keeps a private copy of them in GPU memory. In A100 runs with 1,024 users, per-user salting cut cache reuse from 91% to 48% and halved throughput. It also pushed 95th-percentile time to first token from about 0.2 to 1.5 seconds, while the median moved less, from 166 to 213 ms. Operators are left choosing between a leak and a large bill.
 
 ## Carrying identity into the engine
 
 Zero-trust networking already answers who may reach what: every connection is authenticated, and a policy gateway decides what it may access. But that decision stops at the network edge. By the time a request reaches the inference server, the user's identity is gone, and the cache treats every token alike.
 
-Our prototype, ifabsec, carries the decision into the engine. The gateway service itself is still to be built; for now the prototype mints tokens with a small library.
+The prototype, ifabsec, carries the decision into the engine. The gateway service itself is still to be built; for now the prototype mints tokens with a small library.
 
 1. **A signed label on every request.** The gateway already knows the user. It attaches a short-lived token signed with Ed25519 that gives each part of the prompt a scope: organization, team or user. Shared segments must match a content hash the organization approved, such as its registered system prompt.
 2. **Verification at the engine's front door.** SGLang's HTTP process checks the signature, expiry and replay, then maps each segment to token positions. A chat request without a valid label is rejected; other endpoints get a private cache namespace and share nothing.
@@ -75,7 +75,7 @@ The company instructions stay shared across the organization; everything after t
 
 ## What the labels cost
 
-We ran the same workload under three policies: the default shared cache, per-user salting, and labels.
+The same workload ran under three policies: the default shared cache, per-user salting, and labels.
 
 ![One A100 serving 1,024 users: labels match the default shared cache on reuse and throughput; per-user salting halves throughput](img/story-cost.svg)
 
@@ -90,9 +90,9 @@ The same shape appears across AI infrastructure: one server, many principals tha
 - **Agent fleets**, where agents with different permissions share base instructions on one server.
 - **Team knowledge**, such as a handbook or codebase pasted into many prompts, which can be cached once per team.
 - **Inference providers and GPU clouds**, which today separate unrelated customers with coarse per-customer isolation.
-- **Regulated workloads** that put customer records in prompts. Scoping could keep each record with its owner, though that would need checking against each industry's rules, which we have not done.
+- **Regulated workloads** that put customer records in prompts. Scoping could keep each record with its owner, though that would need checking against each industry's rules, which has not been done yet.
 
-The label is not specific to the prefix cache. Routing requests across replicas, and moving KV data between prefill and decode nodes in disaggregated serving, could carry the same scope. We have built and measured only the cache.
+The label is not specific to the prefix cache. Routing requests across replicas, and moving KV data between prefill and decode nodes in disaggregated serving, could carry the same scope. Only the cache has been built and measured so far.
 
 ## Limits and open questions
 
@@ -100,7 +100,7 @@ The label is not specific to the prefix cache. Routing requests across replicas,
 - **The gateway is trusted.** A compromised gateway can label anything as shared, and someone still has to decide which prompts are organization-wide.
 - **Probing within a scope remains possible** by design. Anything stamped for a team is visible to that team.
 - **Other channels are untouched**, including eviction pressure and delays from batching and queueing.
-- **The validation so far is our own**: one engine, two model families, synthetic tenants, and no outside review of the token design.
+- **The validation so far is in-house**: one engine, two model families, synthetic tenants, and no outside review of the token design.
 
 ## What you can do today
 
