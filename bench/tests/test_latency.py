@@ -122,7 +122,7 @@ def test_http_sender_parses_sglang_style_stream():
         assert sample.output_tokens == 2 and 0 < sample.ttft <= sample.latency
         assert seen["token"] == "tok" and seen["body"]["stream"] is True
         send("per_user", "org0", "org0-u1", [{"role": "user", "content": "x"}])
-        assert seen["body"]["cache_salt"] == "org0/org0-u1"
+        assert seen["body"]["cache_salt"] == "org0.org0-u1"
     finally:
         srv.shutdown()
 
