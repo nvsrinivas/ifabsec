@@ -1,6 +1,6 @@
 # ifabsec: zero trust inside the inference engine
 
-November 21, 2026
+November 21, 2026 · [code and data](https://github.com/nvsrinivas/ifabsec)
 
 Shared LLM inference servers leak what one tenant sent to another through their prefix cache. Per-tenant isolation fixes the leak only by discarding the cache hits that make sharing worthwhile. ifabsec carries verified identity from a zero-trust network layer into the inference engine and enforces it in the cache keys. The goal is per-user isolation without giving up the shared cache. On an A100 running Qwen3-8B on SGLang, a same-org co-worker recovered a 6-digit account number from stock SGLang in every extraction trial, and nothing with ifabsec. With 1,024 users and 16 requests in flight, ifabsec kept stock's cache hit rate (90.4% vs 90.6%) and about 98% of its throughput, twice that of per-user isolation. Median time to first token rose by 25 ms in that run, and by 90 ms in an earlier, more concurrent run made before two overhead fixes.
 
@@ -153,7 +153,7 @@ The priority is an outside review of the token design. After that comes breadth:
 
 Srinivas N. Veereshwara. Carrying zero trust from the network edge into AI inference.
 
-This paper was written with AI assistance (Claude), and the prototype was built and run by the author with AI assistance. All measurements come from runs on rented NVIDIA A100 and RTX 4090 GPUs; the raw results and the code to reproduce them are in the repository.
+This paper was written with AI assistance (Claude), and the prototype was built and run by the author with AI assistance. All measurements come from runs on rented NVIDIA A100 and RTX 4090 GPUs; the raw results and the code to reproduce them are in the [repository](https://github.com/nvsrinivas/ifabsec).
 
 ## Sources
 
