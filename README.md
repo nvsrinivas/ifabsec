@@ -61,7 +61,7 @@ content**. The v0.1 benchmark exists to measure exactly that.
 Limits and next steps are in the [white paper](docs/whitepaper.md#threat-model-and-limits).
 
 White paper: [`docs/whitepaper.md`](docs/whitepaper.md) (design, threat model, results, related work).
-Magazine-style article: [`docs/story.md`](docs/story.md).
+Magazine-style article: [`docs/story.md`](docs/story.md). A PDF is built on every change by the `story-pdf` workflow (Actions tab → latest run → Artifacts), or locally with `python3 scripts/story_pdf.py` (needs pandoc and Chrome).
 
 ## Results so far
 

@@ -1,0 +1,48 @@
+name: story-pdf
+
+# Builds docs/story.md into a PDF whenever the story or its figures change.
+# The PDF is attached to the workflow run as the "story-pdf" artifact
+# (Actions tab -> latest story-pdf run -> Artifacts), so it is never stale
+# and no binary is committed to the repo.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/story.md
+      - docs/img/**
+      - docs/demo/**
+      - scripts/story_pdf.py
+      - .github/workflows/story-pdf.yml
+  pull_request:
+    paths:
+      - docs/story.md
+      - docs/img/**
+      - docs/demo/**
+      - scripts/story_pdf.py
+      - .github/workflows/story-pdf.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pandoc and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pandoc fonts-dejavu fonts-liberation
+
+      - name: Build PDF
+        # ubuntu-latest ships Google Chrome, which prints the HTML to PDF.
+        run: python3 scripts/story_pdf.py build/story.pdf
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: story-pdf
+          path: build/story.pdf
+          retention-days: 90
