@@ -132,14 +132,44 @@ def test_requests_without_a_valid_salt_share_nothing(cfg):
     assert cache.match(again) == 0
     # Embeddings input (no token ids) is isolated too.
     embeds = types.SimpleNamespace(request_id="emb-1", cache_salt=alice.cache_salt, prompt_token_ids=None)
-    assert v.block_keys(embeds, 0, B) == [(v.ISOLATE_KEY, "emb-1")]
+    assert v.block_keys(embeds, 0, B)[0][0] == v.ISOLATE_KEY
+
+
+def test_isolated_requests_with_the_same_client_request_id_never_share(cfg):
+    """vLLM request ids can be client-chosen (X-Request-Id without
+    randomization); isolation must not depend on them."""
+    ids = list(range(40, 40 + 3 * B))
+    a = types.SimpleNamespace(request_id="same", cache_salt=None, prompt_token_ids=ids)
+    b = types.SimpleNamespace(request_id="same", cache_salt=None, prompt_token_ids=ids)
+    cache = BlockCache()
+    cache.insert(a)
+    assert cache.match(b) == 0
+    assert v.block_keys(a, 0, B) == v.block_keys(a, B, 2 * B)  # stable within a request
 
 
 def test_salt_from_another_prompt_is_rejected(cfg):
     alice, _ = request("alice", "acme", "my own question")
-    eve = types.SimpleNamespace(request_id="eve-x", cache_salt=alice.cache_salt,
+    eve = types.SimpleNamespace(request_id=alice.request_id, cache_salt=alice.cache_salt,
                                 prompt_token_ids=alice.prompt_token_ids[:-1] + [0])
-    assert v.block_keys(eve, 0, B) == [(v.ISOLATE_KEY, "eve-x")]
+    v.block_keys(alice, 0, B)  # Alice's runs are decoded first
+    assert v.block_keys(eve, 0, B)[0][0] == v.ISOLATE_KEY
+
+
+def test_block_keys_do_not_reveal_scope_names(cfg):
+    """KV events publish extra keys; a scope id must not be a plain hash of
+    a guessable name like 'user:acme/alice'."""
+    import hashlib
+
+    alice, _ = request("alice", "acme", "hello there")
+    key = v.block_keys(alice, len(alice.prompt_token_ids) - B, len(alice.prompt_token_ids))[0][1]
+    sid = g.scope_id("user:acme/alice")
+    assert str(sid) not in str(key) and hashlib.sha256(b"user:acme/alice").hexdigest()[:24] != key
+
+
+def test_frontend_hashes_are_ignored_when_on(cfg):
+    assert v.ignore_frontend_hashes()
+    g._reset_for_tests(g.Config(False))
+    assert not v.ignore_frontend_hashes()
 
 
 def test_generated_tokens_take_the_most_private_scope(cfg):
@@ -154,6 +184,13 @@ def test_off_hashes_like_stock(cfg):
     alice, _ = request("alice", "acme", "hi")
     g._reset_for_tests(g.Config(False))
     assert v.block_keys(alice, 0, B) is None
+
+
+def test_observe_keeps_an_operators_own_salt(cfg):
+    g._reset_for_tests(g.Config(True, "cluster-1", {"gw-key-1": t.PUB}, t.INTERNAL, observe=True),
+                       Verifier("cluster-1", {"gw-key-1": t.PUB}, now=lambda: T0 + 10))
+    mine = types.SimpleNamespace(request_id="r", cache_salt="acme.alice", prompt_token_ids=list(range(3 * B)))
+    assert v.block_keys(mine, 0, B) is None  # vLLM's own first-block salt applies
 
 
 def test_observe_shares_like_stock_without_a_salt(cfg):
@@ -181,10 +218,25 @@ def hooks(monkeypatch, cfg):
     return mod
 
 
+def rag_render(messages, documents=None, gen=False):
+    """A RAG-style template: documents and a message's name render inside the
+    system turn, before anything the gateway approved ends."""
+    out = ""
+    for i, m in enumerate(messages):
+        extra = f"[{m['name']}]" if m.get("name") else ""
+        docs = "".join(f"<doc>{d}</doc>" for d in (documents or [])) if i == 0 else ""
+        out += f"<|{m['role']}|>{extra}{m['content']}{docs}<|end|>"
+    return out + ("<|assistant|>" if gen else "")
+
+
 class FakeTokenizer:
+    def __init__(self):
+        self.calls = []
+
     def apply_chat_template(self, messages, tools=None, tokenize=False, add_generation_prompt=False, **kw):
         assert not tokenize and not kw.get("tools")
-        return t.render(messages, gen=add_generation_prompt)
+        self.calls.append(kw)
+        return rag_render(messages, kw.get("documents"), gen=add_generation_prompt)
 
     def encode(self, text, add_special_tokens=True):
         assert add_special_tokens is False
@@ -194,17 +246,26 @@ class FakeTokenizer:
 def fake_serving():
     return types.SimpleNamespace(
         renderer=types.SimpleNamespace(tokenizer=FakeTokenizer()),
-        _effective_chat_template_kwargs=lambda req: {"enable_thinking": False},
+        default_chat_template_kwargs={"enable_thinking": False},
+        chat_template=None,
         exclude_tools_when_tool_choice_none=False,
     )
 
 
-def chat(text, header, cache_salt=None, input_type="token"):
-    msgs = [t.SYSTEM, {"role": "user", "content": text}]
-    req = types.SimpleNamespace(messages=msgs, tools=None, tool_choice=None, cache_salt=cache_salt)
+def chat(text, header, cache_salt=None, input_type="token", documents=None, system=None):
+    msgs = [system or t.SYSTEM, {"role": "user", "content": text}]
+    req = types.SimpleNamespace(messages=msgs, tools=None, tool_choice=None, cache_salt=cache_salt,
+                                documents=documents, chat_template_kwargs={"documents": documents})
     raw = types.SimpleNamespace(headers={"x-ifab-token": header} if header else {})
-    inputs = [{"type": input_type, "prompt_token_ids": t.tokenize(t.render(msgs, gen=True))}]
+    # The prompt as vLLM renders it: with the client's documents and every field.
+    inputs = [{"type": input_type, "prompt_token_ids": t.tokenize(rag_render(msgs, documents, gen=True))}]
     return msgs, req, raw, inputs
+
+
+def shared_end(salt, ids):
+    """Tokens in the first (shared) run; 0 when the whole request is private."""
+    runs, _ = g._decode_salt(t.INTERNAL, salt, ids)
+    return 0 if len(runs) == 1 else runs[0][0]
 
 
 def test_label_chat_sets_salt_the_engine_accepts(hooks):
@@ -214,6 +275,49 @@ def test_label_chat_sets_salt_the_engine_accepts(hooks):
     salt = inputs[0]["cache_salt"]
     engine_req = types.SimpleNamespace(request_id="r1", cache_salt=salt, prompt_token_ids=inputs[0]["prompt_token_ids"])
     assert hooks.block_salt_keys(engine_req, 0, B)[0][0] == v.LABELED_KEY
+
+
+def test_client_documents_never_join_the_shared_segment(hooks):
+    """Template-rendered client extras inside the approved system turn must
+    not be cached at org scope (the boundary moves before them)."""
+    secret = "Customer 88214 owes $12,950"
+    msgs, req, raw, inputs = chat("summarize", None, documents=[secret])
+    raw.headers["x-ifab-token"] = t.token_for("alice", "acme", msgs)
+    serving = fake_serving()
+    assert hooks.label_chat(serving, req, raw, inputs) is None
+    ids = inputs[0]["prompt_token_ids"]
+    n = shared_end(inputs[0]["cache_salt"], ids)
+    assert secret not in "".join(map(chr, ids[:n]))
+    assert all("documents" not in kw for kw in serving.renderer.tokenizer.calls)
+
+
+def test_extra_message_fields_never_join_the_shared_segment(hooks):
+    system = {**t.SYSTEM, "name": "acct-877893"}
+    msgs, req, raw, inputs = chat("hello", None, system=system)
+    raw.headers["x-ifab-token"] = t.token_for("alice", "acme", msgs)
+    assert hooks.label_chat(fake_serving(), req, raw, inputs) is None
+    ids = inputs[0]["prompt_token_ids"]
+    assert "877893" not in "".join(map(chr, ids[:shared_end(inputs[0]["cache_salt"], ids)]))
+
+
+def test_one_prompt_per_request(hooks):
+    msgs, req, raw, inputs = chat("hello", None)
+    raw.headers["x-ifab-token"] = t.token_for("alice", "acme", msgs)
+    twice = inputs + [dict(inputs[0])]
+    assert hooks.label_chat(fake_serving(), req, raw, twice) is None  # verified once, both labeled
+    assert twice[0]["cache_salt"] == twice[1]["cache_salt"]
+    msgs, req, raw, inputs = chat("hello", "x")
+    other = inputs + [{"type": "token", "prompt_token_ids": inputs[0]["prompt_token_ids"][:-1]}]
+    assert "one prompt" in hooks.label_chat(fake_serving(), req, raw, other)
+
+
+def test_observe_mode_logs_instead_of_rejecting(hooks):
+    g._reset_for_tests(g.Config(True, "cluster-1", {"gw-key-1": t.PUB}, t.INTERNAL, observe=True),
+                       Verifier("cluster-1", {"gw-key-1": t.PUB}, now=lambda: T0 + 10))
+    msgs, req, raw, inputs = chat("hello", None)
+    assert hooks.label_chat(fake_serving(), req, raw, inputs) is None and "cache_salt" not in inputs[0]
+    msgs, req, raw, inputs = chat("hello", None, cache_salt="acme.alice")
+    assert hooks.label_chat(fake_serving(), req, raw, inputs) is None
 
 
 def test_label_chat_rejections(hooks):

@@ -16,6 +16,7 @@ storage prefetch, SWA or multimodal sharing).
 
 from __future__ import annotations
 
+import logging
 import os
 
 _ENABLED = os.environ.get("IFAB_MODE", "off") != "off"
@@ -31,11 +32,22 @@ def scoped_key(req, token_ids):
 
 
 def label_chat(serving, request, raw_request, adapted_request):
-    """Verify the label token and attach the internal salt to a chat request."""
+    """Verify the label token and attach the internal salt to a chat request.
+    In observe mode a failure is logged and the request proceeds unlabeled."""
     if not _ENABLED:
         return adapted_request
     from ifabsec_engine import sglang_glue as glue
 
+    try:
+        return _label(glue, serving, request, raw_request, adapted_request)
+    except ValueError as e:
+        if not glue.config().observe:
+            raise
+        logging.getLogger("ifabsec").warning("%s (observe mode: not rejected)", e)
+        return adapted_request
+
+
+def _label(glue, serving, request, raw_request, adapted_request):
     if request.cache_salt is not None or adapted_request.cache_salt is not None:
         raise ValueError("ifabsec: cache_salt is set by the gateway, not the client")
     for field in ("image_data", "video_data", "audio_data"):
@@ -51,10 +63,11 @@ def label_chat(serving, request, raw_request, adapted_request):
         adapted_request.input_ids = input_ids
         adapted_request.text = None
 
-    messages = [
-        m.model_dump(exclude_none=True) if hasattr(m, "model_dump") else dict(m)
-        for m in request.messages
-    ]
+    # Role and text only: anything else a client sends that a template renders
+    # inside an approved segment makes the renders disagree (less sharing).
+    messages = glue.render_messages(
+        [m.model_dump(exclude_none=True) if hasattr(m, "model_dump") else dict(m) for m in request.messages]
+    )
 
     # The tools SGLang renders into the prompt (serving_chat: model_dump of
     # request.tools, filtered to the named function for a specific tool_choice).

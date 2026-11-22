@@ -29,53 +29,57 @@ of its own on every block and shares nothing.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import threading
-from collections import OrderedDict
 from typing import Any, Optional, Sequence
 
 from .sglang_glue import (  # engine-neutral ingress and salt handling
     ISOLATE_PREFIX,
     TokenError,
-    _dbg,
-    _decode_salt,
     _timed,
     config,
+    is_ifab_salt,
+    isolation_id,
     label_request,
+    render_messages,
+    request_runs,
     verifier,
 )
 
-__all__ = ["block_keys", "label_request", "config", "verifier", "TokenError", "LABELED_KEY", "ISOLATE_KEY"]
+__all__ = ["block_keys", "label_request", "render_messages", "config", "verifier", "TokenError",
+           "LABELED_KEY", "ISOLATE_KEY", "ignore_frontend_hashes"]
 
-LABELED_KEY = "ifab1"  # extra-key tag for a labeled block: ("ifab1", scope_id)
-ISOLATE_KEY = ISOLATE_PREFIX.rstrip(":")  # ("ifab-iso", request_id): shares nothing
+LABELED_KEY = "ifab1"  # extra-key tag for a labeled block: ("ifab1", keyed scope id)
+ISOLATE_KEY = ISOLATE_PREFIX.rstrip(":")  # ("ifab-iso", random per-request id): shares nothing
 
-_runs_memo: "OrderedDict[tuple, tuple]" = OrderedDict()
-_MEMO_MAX = 65536
-_memo_lock = threading.Lock()
+_keyed: dict[int, str] = {}
+_keyed_lock = threading.Lock()
 
 
 def _runs(cfg, request: Any) -> Optional[list[tuple[Optional[int], int]]]:
     """Verified [(end, scope_id), ...] for a request, or None to isolate.
-    The block hasher calls this once per block, so results are memoized."""
+    Decoded once per request and kept on the Request object."""
     prompt = getattr(request, "prompt_token_ids", None)
     if prompt is None:  # embeddings input: no token ids to bind a salt to
         return None
-    salt = getattr(request, "cache_salt", None)
-    rid = str(getattr(request, "request_id", ""))
-    key = (rid, salt, len(prompt))
-    with _memo_lock:
-        hit = _runs_memo.get(key)
-        if hit is not None:
-            _runs_memo.move_to_end(key)
-            return hit[0]
     with _timed("sched.unseal"):
-        runs, reason = _decode_salt(cfg.internal_key, salt, prompt)
-    _dbg("engine", f"rid={rid}", f"n={len(prompt)}", f"salt={str(salt)[:20]}", f"-> {reason}")
-    with _memo_lock:
-        _runs_memo[key] = (runs,)
-        if len(_runs_memo) > _MEMO_MAX:
-            _runs_memo.popitem(last=False)
-    return runs
+        return request_runs(cfg, request, str(getattr(request, "request_id", "")),
+                            getattr(request, "cache_salt", None), prompt)
+
+
+def _keyed_scope(cfg, sid: int) -> str:
+    """The scope id as it appears in block hashes and KV events: keyed with
+    the internal key, so event consumers can't map it back to a scope name
+    by hashing guesses like 'user:acme/alice'."""
+    k = _keyed.get(sid)
+    if k is None:
+        k = hmac.new(cfg.internal_key, b"ifab-block-scope\0" + sid.to_bytes(8, "big"), hashlib.sha256).hexdigest()[:24]
+        with _keyed_lock:
+            if len(_keyed) > (1 << 16):
+                _keyed.clear()
+            _keyed[sid] = k
+    return k
 
 
 def _scope_at(runs: Sequence[tuple[Optional[int], int]], pos: int) -> int:
@@ -87,22 +91,31 @@ def _scope_at(runs: Sequence[tuple[Optional[int], int]], pos: int) -> int:
 
 def block_keys(request: Any, start_token_idx: int, end_token_idx: int) -> Optional[list[tuple]]:
     """Extra hash keys for the block [start, end) of ``request``, used in place
-    of vLLM's first-block cache_salt key. None means "ifabsec is off: hash
-    exactly like stock vLLM"."""
+    of vLLM's first-block cache_salt key. None means "hash exactly like stock
+    vLLM" (ifabsec off, or observe mode on a request ifabsec didn't label)."""
     cfg = config()
     if not cfg.enforce:
         return None
+    salt = getattr(request, "cache_salt", None)
+    if cfg.observe:
+        if not is_ifab_salt(salt):
+            return None  # an operator's own salt keeps working in observe mode
+        with _timed("sched"):
+            _runs(cfg, request)  # measured, not applied
+        return []  # stock keys with no salt: our salt is unique per request
     with _timed("sched"):
         runs = _runs(cfg, request)
-        if cfg.observe:
-            # Measurement only: key like stock with no salt. Not None, which
-            # would key the first block on our salt, unique per request.
-            return []
         if runs is None:
-            return [(ISOLATE_KEY, str(getattr(request, "request_id", "")))]
-        return [(LABELED_KEY, _scope_at(runs, end_token_idx - 1))]
+            return [(ISOLATE_KEY, isolation_id(request))]
+        return [(LABELED_KEY, _keyed_scope(cfg, _scope_at(runs, end_token_idx - 1)))]
+
+
+def ignore_frontend_hashes() -> bool:
+    """Block hashes a frontend computed itself never carry scopes: with
+    ifabsec on, the engine always hashes prompts itself."""
+    return config().enforce
 
 
 def _reset_for_tests() -> None:
-    with _memo_lock:
-        _runs_memo.clear()
+    with _keyed_lock:
+        _keyed.clear()
