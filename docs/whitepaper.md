@@ -151,7 +151,7 @@ The priority is an outside review of the token design. After that comes breadth:
 
 ## Author and AI use
 
-Srinivas N. Veereshwara. This work is part of carrying zero trust from the network edge into AI inference and beyond.
+Srinivas N. Veereshwara. Carrying zero trust from the network edge into AI inference and beyond.
 
 This paper was written with AI assistance (Claude), and the prototype was built and run by the author with AI assistance. All measurements come from runs on rented NVIDIA A100 and RTX 4090 GPUs; the raw results and the code to reproduce them are in the repository.
 
