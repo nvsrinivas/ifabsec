@@ -12,6 +12,8 @@ Serving a request happens in two phases. In *prefill*, the model reads the whole
 
 Prefix caching keeps those KV entries after a request finishes. When a later request begins with the same token sequence, the server skips prefill for the shared part. Two properties follow from how attention works. Each token's state depends only on what comes before it, so reuse is exact: the reply is identical with or without the cache. For the same reason, only an identical prefix qualifies. The same sentence after a different opening is computed from scratch.
 
+![Prefix caching across three requests: a later request reuses the shared opening; the same text after a different opening is computed again](img/story-prefix-caching.svg)
+
 The payoff is large wherever requests share a long opening: system prompts, tool schemas for agents, documents many users query, earlier turns of a conversation. Hosted APIs pass the saving on as cheaper cached tokens and report the count in each response's usage block. SGLang reports it too when the operator enables `--enable-cache-report`.
 
 ## A side channel built in
@@ -19,6 +21,8 @@ The payoff is large wherever requests share a long opening: system prompts, tool
 Consider a company, Acme, that self-hosts a billing assistant. Every employee's chat opens with the same instructions, *You are Acme Corp's internal billing assistant. Answer briefly.* That shared opening is exactly what prefix caching is for. One employee, Alice, asks: *My account number is 877893. Please check my balance.*
 
 Another employee, Eve, wants that number. She has no access to Alice's session or the server's logs, only the API everyone uses. But the cache is shared, so Eve's requests can match the beginning of Alice's. The server tells her when they do, through both timing and token counts.
+
+![The side channel in three steps: Alice's message is cached; Eve's probe matches one token further; the reply reports more cached tokens and arrives sooner](img/story-side-channel.svg)
 
 The attack has one real prerequisite: Eve must know how Alice's message begins. That holds for forms, templates and agent prompts, where messages follow a fixed shape. It holds much less for free-form chat. Everything below ran on real hardware: an NVIDIA A100 serving Qwen3-8B on SGLang, attacked only on our own server, with synthetic users.
 
