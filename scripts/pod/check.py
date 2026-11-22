@@ -84,7 +84,13 @@ class Server:
         if ENGINE == "vllm":
             # Dev mode enables POST /reset_prefix_cache, used to flush between trials.
             env = {**env, "VLLM_SERVER_DEV_MODE": "1"}
-            args = [sys.executable, "-m", "vllm.entrypoints.cli.main", "serve", model,
+            # The `vllm` console script, as vLLM is normally started. Not
+            # `python -m vllm.entrypoints.cli.main`: worker processes re-import
+            # a __main__ module, and torch then registers kernels twice.
+            exe = Path(sys.executable).with_name("vllm")
+            launcher = [str(exe)] if exe.exists() else [
+                sys.executable, "-c", "from vllm.entrypoints.cli.main import main; main()"]
+            args = [*launcher, "serve", model,
                     "--port", str(port), "--host", "127.0.0.1",
                     "--enable-prefix-caching", "--enable-prompt-tokens-details"]
         else:
