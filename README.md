@@ -56,7 +56,7 @@ Not here yet: a GPU run of the patch, the attacks and the latency benchmark.
 See the roadmap and `engine/sglang/README.md`.
 
 White paper: [`docs/whitepaper.md`](docs/whitepaper.md) (design, threat model, results, related work).
-Plain-language version: [`docs/story.md`](docs/story.md).
+Magazine-style article: [`docs/story.md`](docs/story.md).
 
 ## Results so far
 
