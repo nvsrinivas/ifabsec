@@ -87,15 +87,17 @@ def _scope_at(runs: Sequence[tuple[Optional[int], int]], pos: int) -> int:
 
 def block_keys(request: Any, start_token_idx: int, end_token_idx: int) -> Optional[list[tuple]]:
     """Extra hash keys for the block [start, end) of ``request``, used in place
-    of vLLM's first-block cache_salt key. None means "ifabsec is off or only
-    observing: hash like stock"."""
+    of vLLM's first-block cache_salt key. None means "ifabsec is off: hash
+    exactly like stock vLLM"."""
     cfg = config()
     if not cfg.enforce:
         return None
     with _timed("sched"):
         runs = _runs(cfg, request)
         if cfg.observe:
-            return None  # measurement only: stock keys, no isolation
+            # Measurement only: key like stock with no salt. Not None, which
+            # would key the first block on our salt, unique per request.
+            return []
         if runs is None:
             return [(ISOLATE_KEY, str(getattr(request, "request_id", "")))]
         return [(LABELED_KEY, _scope_at(runs, end_token_idx - 1))]

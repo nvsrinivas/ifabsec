@@ -150,13 +150,23 @@ def test_generated_tokens_take_the_most_private_scope(cfg):
     assert last != first and last == v.block_keys(alice, n - B, n)
 
 
-def test_off_and_observe_hash_like_stock(cfg):
+def test_off_hashes_like_stock(cfg):
     alice, _ = request("alice", "acme", "hi")
     g._reset_for_tests(g.Config(False))
     assert v.block_keys(alice, 0, B) is None
+
+
+def test_observe_shares_like_stock_without_a_salt(cfg):
+    """Observe mode labels requests (so each carries a unique sealed salt) but
+    must cache like stock: identical text from anyone shares every block."""
+    cache = BlockCache()
+    alice, _ = request("alice", "acme", "My account number is 877893.")
+    eve, _ = request("eve", "beta", "My account number is 877893.")
     g._reset_for_tests(g.Config(True, "cluster-1", {"gw-key-1": t.PUB}, t.INTERNAL, observe=True),
                        Verifier("cluster-1", {"gw-key-1": t.PUB}, now=lambda: T0 + 10))
-    assert v.block_keys(alice, 0, B) is None
+    assert v.block_keys(alice, 0, B) == []
+    cache.insert(alice)
+    assert cache.match(eve) == (len(eve.prompt_token_ids) // B) * B
 
 
 # ---------------------------------------------------------------- hook module
