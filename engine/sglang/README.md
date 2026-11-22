@@ -5,9 +5,8 @@
 one new hook module. The logic lives in `ifabsec_engine/sglang_glue.py`, which
 is tested here without a GPU.
 
-**Status: written against the real SGLang source and unit-tested with fake
-SGLang objects, but not yet run on a GPU.** The checklist below is what the
-first pod session has to confirm.
+**Status: run on RTX 4090 and A100 GPUs** (see `docs/results/`). The checklist
+below is what `scripts/pod/check.py` confirms on each new pod.
 
 ## How it works
 

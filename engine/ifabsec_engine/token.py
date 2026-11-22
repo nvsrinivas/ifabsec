@@ -29,7 +29,7 @@ MIN_JTI_BYTES = 16
 
 
 class TokenError(Exception):
-    """Base class; the engine should answer 401/403 and log the reason."""
+    """Base class; the chat endpoint rejects the request (HTTP 400) and logs the reason."""
 
 
 class FormatError(TokenError):
