@@ -112,6 +112,6 @@ The companion [white paper](whitepaper.md), *ifabsec: zero trust inside the infe
 
 ---
 
-*About the author.* Srinivas N. Veereshwara. Carrying zero trust from the network edge into AI inference and beyond.
+*About the author.* Srinivas N. Veereshwara. Carrying zero trust from the network edge into AI inference.
 
 *AI use.* This article was written with AI assistance (Claude), and the project was built and run by the author with AI assistance. All experiments ran on rented NVIDIA A100 and RTX 4090 GPUs; the code, raw results and demo recording are in the repository.
