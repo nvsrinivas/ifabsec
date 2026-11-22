@@ -149,6 +149,12 @@ The priority is an outside review of the token design. After that comes breadth:
 6. Per-scope eviction quotas against eviction-pressure probing.
 7. A proposal to SGLang upstream for gateway-set cache scopes.
 
+## Author and AI use
+
+Srinivas N. Veereshwara. Carrying zero trust from the network edge into AI inference.
+
+This paper was written with AI assistance (Claude), and the prototype was built and run by the author with AI assistance. All measurements come from runs on rented NVIDIA A100 and RTX 4090 GPUs; the raw results and the code to reproduce them are in the repository.
+
 ## Sources
 
 - Gu et al., [Auditing Prompt Caching in Language Model APIs](https://proceedings.mlr.press/v267/gu25b.html), ICML 2025.
