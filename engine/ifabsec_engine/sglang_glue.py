@@ -28,6 +28,7 @@ import hmac
 import json
 import logging
 import os
+import secrets
 import sys
 import threading
 import time
@@ -313,9 +314,14 @@ def _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefi
             runs = [[None, most_private]]
             break
         # The boundary is where the render of messages[:end] and the full prompt
-        # stop agreeing. Every token before it equals the render of approved
-        # messages, so it can't carry user text. Templates that close a partial
-        # conversation (Phi appends an end-of-text token) just move it earlier.
+        # stop agreeing. The hooks render prefixes from each message's role and
+        # text only (render_messages), with the server's own template and no
+        # client options, so every token before the boundary is the render of
+        # approved content: anything else the client sent (documents, template
+        # options, extra message fields) that a template places there makes
+        # the renders disagree and moves the boundary earlier. Templates that
+        # close a partial conversation (Phi appends an end-of-text token) just
+        # move it earlier too.
         n = _common_prefix_len(prefix_ids, input_ids)
         prev_end = runs[-1][0] if runs else 0
         if n <= prev_end or len(prefix_ids) - n > _MAX_TEMPLATE_TAIL:
@@ -335,6 +341,7 @@ def _label_request(cfg, ver, token_header, raw_messages, input_ids, render_prefi
 _runs_memo: "OrderedDict[str, tuple]" = OrderedDict()
 _MEMO_MAX = 65536
 _scope_ids: dict[int, str] = {}
+_SCOPE_IDS_MAX = 1 << 20
 _ids_lock = threading.Lock()
 
 
@@ -342,6 +349,8 @@ def scope_id(scope: str) -> Optional[int]:
     """43-bit id for a scope string; None on a (detected) collision."""
     sid = int.from_bytes(hashlib.sha256(b"ifab-scope\0" + scope.encode()).digest()[:8], "big") >> (64 - SCOPE_BITS)
     with _ids_lock:
+        if len(_scope_ids) > _SCOPE_IDS_MAX:
+            _scope_ids.clear()  # bounded; collisions are only detected among recent scopes
         prev = _scope_ids.setdefault(sid, scope)
     if prev != scope:
         log.error("ifabsec: scope id collision between %r and %r; isolating", prev, scope)
@@ -385,18 +394,56 @@ def _decode_salt(internal_key, salt, input_ids):
         return None, f"unparseable salt: {e}"
 
 
-def _runs_for(cfg: Config, rid: str, salt: Any, origin_ids: Sequence[int]):
-    key = f"{rid}\0{salt}\0{len(origin_ids)}"
-    hit = _runs_memo.get(key)
-    if hit is not None:
-        _runs_memo.move_to_end(key)
-        return hit[0]
+def is_ifab_salt(salt: Any) -> bool:
+    return isinstance(salt, str) and salt.startswith(SALT_PREFIX)
+
+
+def render_messages(raw_messages: Sequence[Any]) -> list[dict]:
+    """Messages as the hooks render them to find segment boundaries: role and
+    content only. The approval digest covers exactly these fields, so nothing
+    else a client sends can land in a shared segment unnoticed."""
+    out = []
+    for m in raw_messages:
+        get = m.get if isinstance(m, Mapping) else (lambda k, m=m: getattr(m, k, None))
+        out.append({"role": get("role"), "content": get("content")})
+    return out
+
+
+def request_runs(cfg: Config, req: Any, rid: str, salt: Any, origin_ids: Sequence[int]):
+    """Verified runs for a request, decoded once and kept on the request
+    object. Never memoized by request id: clients can choose request ids."""
+    stored = getattr(req, "_ifab_runs", None)
+    if stored is not None and stored[0] == salt:
+        return stored[1]
     runs, reason = _decode_salt(cfg.internal_key, salt, origin_ids)
     _dbg("scheduler", f"rid={rid}", _ids_summary(origin_ids), f"salt={str(salt)[:20]}", f"-> {reason}")
-    _runs_memo[key] = (runs,)
-    if len(_runs_memo) > _MEMO_MAX:
-        _runs_memo.popitem(last=False)
+    try:
+        setattr(req, "_ifab_runs", (salt, runs))
+    except (AttributeError, TypeError):  # no room on the object: memo keyed by the ids themselves
+        key = (rid, salt, _ids_digest(origin_ids))
+        with _ids_lock:
+            hit = _runs_memo.get(key)
+            if hit is not None:
+                _runs_memo.move_to_end(key)
+                return hit[0]
+            _runs_memo[key] = (runs,)
+            if len(_runs_memo) > _MEMO_MAX:
+                _runs_memo.popitem(last=False)
     return runs
+
+
+def isolation_id(req: Any) -> str:
+    """A random id per request for a namespace of its own. Not the request
+    id: clients can choose request ids, and two isolated requests must never
+    share a namespace."""
+    iso = getattr(req, "_ifab_iso", None)
+    if iso is None:
+        iso = secrets.token_hex(16)
+        try:
+            setattr(req, "_ifab_iso", iso)
+        except (AttributeError, TypeError):
+            pass  # a fresh id per call: still isolated, only less reuse
+    return iso
 
 
 def pack(token_ids: Sequence[int], runs: Sequence[tuple[Optional[int], int]]) -> Optional[array]:
@@ -427,10 +474,12 @@ def scoped_key(req: Any, token_ids: Sequence[int]):
     salt = getattr(req, "cache_salt", None)
     if not cfg.enforce:
         return token_ids, salt
+    if cfg.observe and not is_ifab_salt(salt):
+        return token_ids, salt  # observe leaves other salts (an operator's own) alone
     with _timed("sched"):
         rid = str(getattr(req, "rid", ""))
         with _timed("sched.unseal"):
-            runs = _runs_for(cfg, rid, salt, getattr(req, "origin_input_ids", ()))
+            runs = request_runs(cfg, req, rid, salt, getattr(req, "origin_input_ids", ()))
         if cfg.observe:
             return token_ids, None  # measurement only: stock keys, no isolation
         if runs is not None:
@@ -439,4 +488,4 @@ def scoped_key(req: Any, token_ids: Sequence[int]):
             if packed is not None:
                 return packed, LABELED_NAMESPACE
             _dbg("scheduler", f"rid={rid}", "token id out of range; isolating")
-        return token_ids, ISOLATE_PREFIX + rid
+        return token_ids, ISOLATE_PREFIX + isolation_id(req)

@@ -138,13 +138,43 @@ def test_scoped_key_modes(cfg):
     assert salt == g.LABELED_NAMESPACE and len(ids) == len(req.origin_input_ids)
 
     unlabeled = types.SimpleNamespace(rid="r9", cache_salt=None, origin_input_ids=[1, 2, 3])
-    assert g.scoped_key(unlabeled, [1, 2, 3]) == ([1, 2, 3], g.ISOLATE_PREFIX + "r9")
+    ids, salt = g.scoped_key(unlabeled, [1, 2, 3])
+    assert ids == [1, 2, 3] and salt.startswith(g.ISOLATE_PREFIX) and "r9" not in salt
+    assert g.scoped_key(unlabeled, [1, 2, 3])[1] == salt  # stable for the same request
 
     forged = types.SimpleNamespace(rid="r10", cache_salt=req.cache_salt, origin_input_ids=[9, 9])
-    assert g.scoped_key(forged, [9, 9])[1] == g.ISOLATE_PREFIX + "r10"
+    assert g.scoped_key(forged, [9, 9])[1].startswith(g.ISOLATE_PREFIX)
+
+    # Two requests a client gave the same id never share an isolated namespace.
+    twin = types.SimpleNamespace(rid="r9", cache_salt=None, origin_input_ids=[1, 2, 3])
+    assert g.scoped_key(twin, [1, 2, 3])[1] != salt
 
     g._reset_for_tests(g.Config(False))
-    assert g.scoped_key(unlabeled, [1, 2, 3]) == ([1, 2, 3], None)
+    plain = types.SimpleNamespace(rid="r11", cache_salt=None, origin_input_ids=[1, 2, 3])
+    assert g.scoped_key(plain, [1, 2, 3]) == ([1, 2, 3], None)
+
+
+def test_observe_mode_leaves_operator_salts_alone(cfg):
+    g._reset_for_tests(g.Config(True, "cluster-1", {"gw-key-1": PUB}, INTERNAL, observe=True),
+                       Verifier("cluster-1", {"gw-key-1": PUB}, now=lambda: T0 + 10))
+    mine = types.SimpleNamespace(rid="r1", cache_salt="acme.alice", origin_input_ids=[1, 2, 3])
+    assert g.scoped_key(mine, [1, 2, 3]) == ([1, 2, 3], "acme.alice")
+
+
+def test_salt_on_a_request_is_rechecked_when_the_prompt_differs(cfg):
+    """A request id or salt seen before is no shortcut: runs are bound to the
+    request object and its own prompt."""
+    req, _ = ingress(cfg, "alice", "acme", "hello")
+    assert g.scoped_key(req, req.origin_input_ids)[1] == g.LABELED_NAMESPACE
+    other = types.SimpleNamespace(rid=req.rid, cache_salt=req.cache_salt,
+                                  origin_input_ids=req.origin_input_ids[:-1] + [0])
+    assert g.scoped_key(other, other.origin_input_ids)[1].startswith(g.ISOLATE_PREFIX)
+
+
+def test_render_messages_keeps_only_role_and_content():
+    msgs = [{"role": "system", "content": "S", "name": "secret-name"},
+            types.SimpleNamespace(role="user", content="hi", tool_calls=[{"x": 1}])]
+    assert g.render_messages(msgs) == [{"role": "system", "content": "S"}, {"role": "user", "content": "hi"}]
 
 
 def test_scope_id_collision_isolates(cfg):
